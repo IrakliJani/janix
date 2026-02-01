@@ -1,0 +1,8 @@
+node_modules/
+dist/
+projects/*
+!projects/.gitkeep
+clones/*
+!clones/.gitkeep
+*.log
+.DS_Store

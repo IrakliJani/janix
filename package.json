@@ -1,0 +1,32 @@
+{
+  "name": "jaegent",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "jaegent": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "jaegent": "node dist/cli.js",
+    "format": "oxfmt --write src",
+    "format:check": "oxfmt --check src",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run format && npm run lint && npm run typecheck",
+    "docker:build": "docker build -t jaegent -f Dockerfile.jaegent ."
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.2.0",
+    "@inquirer/search": "^4.1.0",
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@tsconfig/strictest": "^2.0.5",
+    "@types/node": "^22.0.0",
+    "oxfmt": "^0.27.0",
+    "oxlint": "^0.16.0",
+    "typescript": "^5.9.0-beta"
+  }
+}

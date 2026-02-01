@@ -1,0 +1,27 @@
+FROM nixos/nix:latest
+
+# Configure Nix for flakes
+COPY nix.conf /etc/nix/nix.conf
+
+# Copy flake and home-manager config
+COPY flake.nix home.nix /etc/jaegent/
+
+# Remove packages that conflict with home-manager
+RUN nix-env -e git-minimal man-db || true
+
+# Build and activate home-manager configuration for current arch
+ARG TARGETARCH
+RUN cd /etc/jaegent && \
+    case "$TARGETARCH" in \
+      amd64) SYSTEM="x86_64-linux" ;; \
+      arm64) SYSTEM="aarch64-linux" ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+    esac && \
+    nix run home-manager -- switch --flake ".#root@${SYSTEM}" -b backup
+
+# Set shell
+ENV SHELL=/root/.nix-profile/bin/zsh
+
+WORKDIR /workspace
+
+CMD ["zsh", "-l"]
