@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { config, containerName, JAGENT_ROOT } from "./config.js";
+import { config, containerName, IKAGENT_ROOT } from "./config.js";
 
 export interface ContainerInfo {
   id: string;
@@ -28,7 +28,7 @@ export function imageExists(): boolean {
 export function buildImage(dockerfilePath: string): void {
   const result = spawnSync(
     "docker",
-    ["build", "-t", config.imageName, "-f", dockerfilePath, JAGENT_ROOT],
+    ["build", "-t", config.imageName, "-f", dockerfilePath, IKAGENT_ROOT],
     {
       stdio: "inherit",
     },
@@ -38,7 +38,15 @@ export function buildImage(dockerfilePath: string): void {
   }
 }
 
-export function createContainer(project: string, branch: string, clonePath: string): string {
+export interface CreateContainerOptions {
+  project: string;
+  branch: string;
+  clonePath: string;
+  network?: string | null;
+}
+
+export function createContainer(options: CreateContainerOptions): string {
+  const { project, branch, clonePath, network } = options;
   const name = containerName(project, branch);
 
   const args = [
@@ -53,10 +61,14 @@ export function createContainer(project: string, branch: string, clonePath: stri
     "-w",
     config.containerWorkspace,
     "--add-host=host.docker.internal:host-gateway",
-    config.imageName,
-    "sleep",
-    "infinity",
   ];
+
+  // Add network if specified
+  if (network) {
+    args.push("--network", network);
+  }
+
+  args.push(config.imageName, "sleep", "infinity");
 
   return runDocker(args);
 }
@@ -76,7 +88,7 @@ export function listContainers(): ContainerInfo[] {
 
     return output.split("\n").map((line) => {
       const [id, name, status] = line.split("\t");
-      // Parse project and branch from container name: jaegent-<project>-<branch>
+      // Parse project and branch from container name: ikagent-<project>-<branch>
       const parts = name?.replace(`${config.containerPrefix}-`, "").split("-") ?? [];
       const project = parts[0] ?? "";
       const branch = parts.slice(1).join("-");
@@ -153,4 +165,16 @@ export function removeContainer(name: string): void {
 export function isContainerRunning(name: string): boolean {
   const container = getContainerByName(name);
   return container?.status.toLowerCase().includes("up") ?? false;
+}
+
+/**
+ * List available Docker networks.
+ */
+export function listNetworks(): string[] {
+  try {
+    const output = runDocker(["network", "ls", "--format", "{{.Name}}"]);
+    return output.split("\n").filter((n) => n);
+  } catch {
+    return [];
+  }
 }

@@ -1,27 +1,62 @@
 import { Command } from "commander";
+import {
+  config,
+  findIkagentRoot,
+  getProjectName,
+  sanitizeBranchForContainer,
+} from "../lib/config.js";
 import { listContainers } from "../lib/docker.js";
+import { listClones } from "../lib/git.js";
 
 export const listCommand = new Command("list")
   .alias("ls")
-  .description("List all dev environments")
+  .description("List dev environments for this project")
   .action(() => {
-    const containers = listContainers();
+    // Verify we're in an ikagent project
+    if (!findIkagentRoot()) {
+      console.error("Not in an ikagent project. Run 'ikagent init' first.");
+      process.exit(1);
+    }
 
-    if (containers.length === 0) {
+    const project = getProjectName();
+
+    // Get clones
+    const clones = listClones();
+
+    // Get containers for this project by name prefix to support hyphenated project names.
+    const projectPrefix = `${config.containerPrefix}-${project}-`;
+    const containers = listContainers().filter((c) => c.name.startsWith(projectPrefix));
+
+    if (clones.length === 0 && containers.length === 0) {
       console.log("No dev environments found");
+      console.log(`\nRun 'ikagent create <branch>' to create one.`);
       return;
     }
 
-    console.log("\nDev environments:\n");
+    console.log(`\nDev environments for ${project}:\n`);
 
-    for (const c of containers) {
-      const status = c.status.toLowerCase().includes("up")
-        ? "\x1b[32mrunning\x1b[0m"
-        : "\x1b[33mstopped\x1b[0m";
-      console.log(`  ${c.project}/${c.branch}`);
+    // Map sanitized branch -> container.
+    const containerMap = new Map(
+      containers.map((c) => [c.name.slice(projectPrefix.length), c]),
+    );
+
+    for (const clone of clones) {
+      const sanitizedBranch = sanitizeBranchForContainer(clone.branch);
+      const container = containerMap.get(sanitizedBranch);
+      const status = container
+        ? container.status.toLowerCase().includes("up")
+          ? "\x1b[32mrunning\x1b[0m"
+          : "\x1b[33mstopped\x1b[0m"
+        : "\x1b[31mno container\x1b[0m";
+
+      console.log(`  ${clone.name}`);
+      console.log(`    Branch:    ${clone.branch}`);
       console.log(`    Status:    ${status}`);
-      console.log(`    Container: ${c.id.slice(0, 12)}\n`);
+      if (container) {
+        console.log(`    Container: ${container.id.slice(0, 12)}`);
+      }
+      console.log("");
     }
 
-    console.log(`${containers.length} environment(s)\n`);
+    console.log(`${clones.length} environment(s)\n`);
   });

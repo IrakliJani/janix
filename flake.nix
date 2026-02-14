@@ -1,5 +1,5 @@
 {
-  description = "jaegent container home-manager config";
+  description = "ikagent container home-manager config";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
