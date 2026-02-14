@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { getConfigPath, findIkagentRoot } from "./config.js";
+import { type CacheType } from "./docker.js";
 
 export interface ProjectConfig {
   /** Files to copy from project root to each clone */
@@ -9,12 +10,15 @@ export interface ProjectConfig {
   network: string | null;
   /** Init scripts to run after clone creation */
   init: string[];
+  /** Package manager caches to mount (pnpm, bun, npm, yarn) */
+  caches: CacheType[];
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
   copy: [],
   network: null,
   init: [],
+  caches: [],
 };
 
 /**
@@ -35,6 +39,7 @@ export function loadProjectConfig(): ProjectConfig {
       copy: parsed.copy ?? DEFAULT_CONFIG.copy,
       network: parsed.network ?? DEFAULT_CONFIG.network,
       init: parsed.init ?? DEFAULT_CONFIG.init,
+      caches: parsed.caches ?? DEFAULT_CONFIG.caches,
     };
   } catch {
     console.warn(`Warning: Could not parse ${configPath}, using defaults`);

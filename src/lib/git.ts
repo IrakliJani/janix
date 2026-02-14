@@ -76,44 +76,44 @@ export function createClone(branch: string): string {
     mkdirSync(clonesDir, { recursive: true });
   }
 
-  // Clone the repo (origin = project root for sandboxed pushes)
+  // Clone from local repo (fast, uses hardlinks)
   runGit(["clone", repoPath, clonePath], clonesDir);
 
-  // If the source repo has an origin remote, add it as upstream in the clone.
-  // This allows checking out branches that exist only on the true upstream remote.
+  // Get the real remote URL to fetch branches that only exist upstream
+  let remoteUrl: string | null = null;
   try {
-    const remoteUrl = runGit(["remote", "get-url", "origin"], repoPath);
-    runGit(["remote", "add", "upstream", remoteUrl], clonePath);
-    runGit(["fetch", "upstream"], clonePath);
+    remoteUrl = runGit(["remote", "get-url", "origin"], repoPath);
   } catch {
-    // Source repo has no origin remote; local branch checkout still works from clone origin.
+    // Source repo has no origin remote
   }
 
-  // If branch exists locally in source repo, prefer clone-origin branch.
-  const localBranches = listLocalBranches(repoPath);
-  const isLocalInSource = localBranches.includes(branch);
-
-  if (isLocalInSource) {
-    if (refExists(clonePath, `refs/remotes/origin/${branch}`)) {
-      runGit(["checkout", "-b", branch, `origin/${branch}`, "--no-track"], clonePath);
-      return clonePath;
-    }
-    if (refExists(clonePath, `refs/heads/${branch}`)) {
-      runGit(["checkout", branch], clonePath);
-      return clonePath;
-    }
+  // Add real remote as "upstream" for fetching remote-only branches
+  if (remoteUrl) {
+    runGit(["remote", "add", "upstream", remoteUrl], clonePath);
   }
 
-  // Branch from true upstream remote (no tracking - pushes go to clone origin).
-  if (refExists(clonePath, `refs/remotes/upstream/${branch}`)) {
-    runGit(["checkout", "-b", branch, `upstream/${branch}`, "--no-track"], clonePath);
+  // Try to checkout the branch
+  // First check if it exists as a local branch (e.g., default branch)
+  if (refExists(clonePath, `refs/heads/${branch}`)) {
+    runGit(["checkout", branch], clonePath);
     return clonePath;
   }
 
-  // Fallback: branch available from clone origin.
+  // Check if it exists in origin (local repo's branches)
   if (refExists(clonePath, `refs/remotes/origin/${branch}`)) {
     runGit(["checkout", "-b", branch, `origin/${branch}`, "--no-track"], clonePath);
     return clonePath;
+  }
+
+  // Branch not in local clone - fetch only this branch from upstream
+  if (remoteUrl) {
+    try {
+      runGit(["fetch", "upstream", `${branch}:refs/remotes/upstream/${branch}`], clonePath);
+      runGit(["checkout", "-b", branch, `upstream/${branch}`, "--no-track"], clonePath);
+      return clonePath;
+    } catch {
+      // Branch doesn't exist upstream either
+    }
   }
 
   throw new Error(`Could not checkout branch '${branch}' in clone`);

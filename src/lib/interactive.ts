@@ -1,8 +1,14 @@
-import { confirm as inquirerConfirm, input } from "@inquirer/prompts";
+import { confirm as inquirerConfirm, input, checkbox } from "@inquirer/prompts";
 import search from "@inquirer/search";
 import { getProjectRoot } from "./config.js";
 import { listBranches, fetchAll } from "./git.js";
-import { listContainers, listNetworks, type ContainerInfo } from "./docker.js";
+import {
+  listContainers,
+  listNetworks,
+  CACHE_CONFIGS,
+  type ContainerInfo,
+  type CacheType,
+} from "./docker.js";
 
 export async function selectBranch(): Promise<string> {
   const projectRoot = getProjectRoot();
@@ -126,4 +132,18 @@ export async function inputMultiLine(prompt: string): Promise<string[]> {
 
 export async function confirm(message: string): Promise<boolean> {
   return inquirerConfirm({ message, default: false });
+}
+
+export async function selectCaches(): Promise<CacheType[]> {
+  const cacheTypes = Object.keys(CACHE_CONFIGS) as CacheType[];
+
+  const selected = await checkbox({
+    message: "Package manager caches to persist:",
+    choices: cacheTypes.map((cache) => ({
+      name: cache,
+      value: cache,
+    })),
+  });
+
+  return selected;
 }

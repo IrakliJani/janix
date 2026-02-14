@@ -1,6 +1,40 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { config, containerName, IKAGENT_ROOT } from "./config.js";
 
+export const CACHE_VOLUME = "ikagent-cache";
+export const CACHE_MOUNT_PATH = "/cache";
+
+/** Predefined cache configurations for package managers */
+export const CACHE_CONFIGS = {
+  pnpm: {
+    env: { PNPM_HOME: `${CACHE_MOUNT_PATH}/pnpm` },
+    init: ["mkdir -p /cache/pnpm"],
+  },
+  bun: {
+    env: { BUN_INSTALL: `${CACHE_MOUNT_PATH}/bun` },
+    init: ["mkdir -p /cache/bun"],
+  },
+  npm: {
+    env: {},
+    init: ["mkdir -p /cache/npm", "npm config set cache /cache/npm"],
+  },
+  yarn: {
+    env: { YARN_CACHE_FOLDER: `${CACHE_MOUNT_PATH}/yarn` },
+    init: ["mkdir -p /cache/yarn"],
+  },
+} as const;
+
+export type CacheType = keyof typeof CACHE_CONFIGS;
+
+/** Get init commands for selected caches */
+export function getCacheInitCommands(caches: CacheType[]): string[] {
+  const commands: string[] = [];
+  for (const cache of caches) {
+    commands.push(...CACHE_CONFIGS[cache].init);
+  }
+  return commands;
+}
+
 export interface ContainerInfo {
   id: string;
   name: string;
@@ -43,10 +77,19 @@ export interface CreateContainerOptions {
   branch: string;
   clonePath: string;
   network?: string | null;
+  caches?: CacheType[];
+}
+
+export function ensureVolumeExists(volumeName: string): void {
+  try {
+    runDocker(["volume", "inspect", volumeName]);
+  } catch {
+    runDocker(["volume", "create", volumeName]);
+  }
 }
 
 export function createContainer(options: CreateContainerOptions): string {
-  const { project, branch, clonePath, network } = options;
+  const { project, branch, clonePath, network, caches = [] } = options;
   const name = containerName(project, branch);
 
   const args = [
@@ -62,6 +105,20 @@ export function createContainer(options: CreateContainerOptions): string {
     config.containerWorkspace,
     "--add-host=host.docker.internal:host-gateway",
   ];
+
+  // Add cache volume if caches are specified
+  if (caches.length > 0) {
+    ensureVolumeExists(CACHE_VOLUME);
+    args.push("-v", `${CACHE_VOLUME}:${CACHE_MOUNT_PATH}`);
+
+    // Add environment variables for each cache
+    for (const cache of caches) {
+      const cacheConfig = CACHE_CONFIGS[cache];
+      for (const [key, value] of Object.entries(cacheConfig.env)) {
+        args.push("-e", `${key}=${value}`);
+      }
+    }
+  }
 
   // Add network if specified
   if (network) {

@@ -3,11 +3,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { IKAGENT_DIR, CLONES_DIR } from "../lib/config.js";
 import { isGitRepo, addToGitignore } from "../lib/init.js";
-import {
-  saveProjectConfig,
-  type ProjectConfig,
-} from "../lib/project-config.js";
-import { inputMultiLine, selectNetwork } from "../lib/interactive.js";
+import { saveProjectConfig, type ProjectConfig } from "../lib/project-config.js";
+import { inputMultiLine, selectNetwork, selectCaches } from "../lib/interactive.js";
 
 export const initCommand = new Command("init")
   .description("Initialize ikagent in current git repository")
@@ -49,12 +46,16 @@ export const initCommand = new Command("init")
     const network = await selectNetwork();
 
     console.log("");
+    const caches = await selectCaches();
+
+    console.log("");
     const initScripts = await inputMultiLine("Init scripts to run:");
 
     // Save config
     const config: ProjectConfig = {
       copy: copyFiles,
       network,
+      caches,
       init: initScripts,
     };
     saveProjectConfig(config);
@@ -66,7 +67,5 @@ export const initCommand = new Command("init")
       console.log(`✓ Added ${gitignoreLine} to .gitignore`);
     }
 
-    console.log(
-      `\nReady! Run 'ikagent create <branch>' to create a dev environment.`,
-    );
+    console.log(`\nReady! Run 'ikagent create <branch>' to create a dev environment.`);
   });

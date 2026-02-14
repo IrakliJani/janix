@@ -16,6 +16,7 @@ import {
   buildImage,
   isContainerRunning,
   startContainer,
+  getCacheInitCommands,
 } from "../lib/docker.js";
 import { branchExists, createClone } from "../lib/git.js";
 import { copyFilesToClone, runInitScripts } from "../lib/init.js";
@@ -94,6 +95,7 @@ export const createCommand = new Command("create")
       branch,
       clonePath,
       network: projectConfig.network,
+      caches: projectConfig.caches,
     });
     console.log(`Container created: ${containerId.slice(0, 12)}`);
 
@@ -101,7 +103,18 @@ export const createCommand = new Command("create")
       console.log(`Joined network: ${projectConfig.network}`);
     }
 
-    // Run init scripts
+    if (projectConfig.caches.length > 0) {
+      console.log(`Cache volume mounted: ${projectConfig.caches.join(", ")}`);
+    }
+
+    // Run cache init commands (create dirs, configure package managers)
+    const cacheInitCommands = getCacheInitCommands(projectConfig.caches);
+    if (cacheInitCommands.length > 0) {
+      console.log("Configuring caches...");
+      runInitScripts(cacheInitCommands, name);
+    }
+
+    // Run user init scripts
     if (projectConfig.init.length > 0) {
       console.log("Running init scripts...");
       runInitScripts(projectConfig.init, name);

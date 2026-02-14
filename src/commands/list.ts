@@ -36,9 +36,7 @@ export const listCommand = new Command("list")
     console.log(`\nDev environments for ${project}:\n`);
 
     // Map sanitized branch -> container.
-    const containerMap = new Map(
-      containers.map((c) => [c.name.slice(projectPrefix.length), c]),
-    );
+    const containerMap = new Map(containers.map((c) => [c.name.slice(projectPrefix.length), c]));
 
     for (const clone of clones) {
       const sanitizedBranch = sanitizeBranchForContainer(clone.branch);
