@@ -1,5 +1,8 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { config, containerName, IKAGENT_ROOT } from "./config.js";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { config, containerName, getProjectImageName, IKAGENT_ROOT } from "./config.js";
 
 export const CACHE_VOLUME = "ikagent-cache";
 export const CACHE_MOUNT_PATH = "/cache";
@@ -50,25 +53,49 @@ function runDocker(args: string[]): string {
   }).trim();
 }
 
-export function imageExists(): boolean {
+export function imageExists(project: string): boolean {
+  const imageName = getProjectImageName(project);
   try {
-    runDocker(["image", "inspect", config.imageName]);
+    runDocker(["image", "inspect", imageName]);
     return true;
   } catch {
     return false;
   }
 }
 
-export function buildImage(dockerfilePath: string): void {
-  const result = spawnSync(
-    "docker",
-    ["build", "-t", config.imageName, "-f", dockerfilePath, IKAGENT_ROOT],
-    {
-      stdio: "inherit",
-    },
-  );
-  if (result.status !== 0) {
-    throw new Error(`Docker build failed with exit code ${result.status}`);
+export function buildImage(project: string, ikagentDir: string): void {
+  const imageName = getProjectImageName(project);
+
+  // Create temp build context with all necessary files
+  const buildContext = join(tmpdir(), `ikagent-build-${Date.now()}`);
+  mkdirSync(buildContext, { recursive: true });
+
+  try {
+    // Copy files from ikagent repo
+    copyFileSync(
+      join(IKAGENT_ROOT, "Dockerfile.ikagent"),
+      join(buildContext, "Dockerfile.ikagent"),
+    );
+    copyFileSync(join(IKAGENT_ROOT, "nix.conf"), join(buildContext, "nix.conf"));
+
+    // Copy project-specific packages.nix
+    copyFileSync(join(ikagentDir, "packages.nix"), join(buildContext, "packages.nix"));
+
+    const result = spawnSync(
+      "docker",
+      ["build", "-t", imageName, "-f", "Dockerfile.ikagent", "."],
+      {
+        cwd: buildContext,
+        stdio: "inherit",
+      },
+    );
+
+    if (result.status !== 0) {
+      throw new Error(`Docker build failed with exit code ${result.status}`);
+    }
+  } finally {
+    // Clean up temp directory
+    rmSync(buildContext, { recursive: true, force: true });
   }
 }
 
@@ -125,7 +152,8 @@ export function createContainer(options: CreateContainerOptions): string {
     args.push("--network", network);
   }
 
-  args.push(config.imageName, "sleep", "infinity");
+  const imageName = getProjectImageName(project);
+  args.push(imageName, "sleep", "infinity");
 
   return runDocker(args);
 }

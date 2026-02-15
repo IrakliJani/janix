@@ -1,7 +1,7 @@
-import { confirm as inquirerConfirm, input, checkbox } from "@inquirer/prompts";
+import { confirm as inquirerConfirm, input, checkbox, select } from "@inquirer/prompts";
 import search from "@inquirer/search";
 import { getProjectRoot } from "./config.js";
-import { listBranches, fetchAll } from "./git.js";
+import { listBranches, fetchAllAsync } from "./git.js";
 import {
   listContainers,
   listNetworks,
@@ -9,26 +9,52 @@ import {
   type ContainerInfo,
   type CacheType,
 } from "./docker.js";
+import { type EnvType, type PackageManagerType } from "./project-config.js";
 
 export async function selectBranch(): Promise<string> {
   const projectRoot = getProjectRoot();
 
-  console.log("Fetching branches...");
-  fetchAll(projectRoot);
-  const branches = listBranches(projectRoot);
-  const uniqueBranches = [...new Set(branches)].sort();
-  console.log(`${uniqueBranches.length} branches loaded`);
+  // Start with local branches immediately
+  let branches = listBranches(projectRoot);
+  let uniqueBranches = [...new Set(branches)].sort();
+  let isFetching = true;
+
+  // Fetch remote branches in background
+  fetchAllAsync(projectRoot)
+    .then(() => {
+      branches = listBranches(projectRoot);
+      uniqueBranches = [...new Set(branches)].sort();
+      isFetching = false;
+    })
+    .catch(() => {
+      isFetching = false;
+    });
 
   const branch = await search({
     message: "Search for a branch:",
     source: async (term: string | undefined) => {
       const searchTerm = term?.toLowerCase() ?? "";
-      return uniqueBranches
+      const filtered = uniqueBranches
         .filter((b) => b.toLowerCase().includes(searchTerm))
         .slice(0, 20)
         .map((b) => ({ name: b, value: b }));
+
+      // Add loading indicator if still fetching
+      if (isFetching && filtered.length < 20) {
+        filtered.push({
+          name: "⏳ Fetching remote branches...",
+          value: "__loading__",
+        });
+      }
+
+      return filtered;
     },
   });
+
+  // If user somehow selected loading indicator, wait and retry
+  if (branch === "__loading__") {
+    return selectBranch();
+  }
 
   return branch;
 }
@@ -146,4 +172,35 @@ export async function selectCaches(): Promise<CacheType[]> {
   });
 
   return selected;
+}
+
+export async function selectEnvironments(): Promise<EnvType[]> {
+  const selected = await checkbox({
+    message: "Development environments:",
+    choices: [
+      { name: "Node.js", value: "nodejs" as EnvType },
+      { name: "Python", value: "python" as EnvType },
+    ],
+  });
+
+  if (selected.length === 0) {
+    console.error("At least one environment is required");
+    return selectEnvironments();
+  }
+
+  return selected;
+}
+
+export async function selectPackageManager(): Promise<PackageManagerType> {
+  const pm = await select({
+    message: "Package manager:",
+    choices: [
+      { name: "pnpm", value: "pnpm" as PackageManagerType },
+      { name: "npm", value: "npm" as PackageManagerType },
+      { name: "bun", value: "bun" as PackageManagerType },
+      { name: "yarn", value: "yarn" as PackageManagerType },
+    ],
+  });
+
+  return pm;
 }

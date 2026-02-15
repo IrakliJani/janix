@@ -3,7 +3,14 @@ import { dirname } from "node:path";
 import { getConfigPath, findIkagentRoot } from "./config.js";
 import { type CacheType } from "./docker.js";
 
+export type EnvType = "nodejs" | "python";
+export type PackageManagerType = "pnpm" | "npm" | "bun" | "yarn";
+
 export interface ProjectConfig {
+  /** Development environments */
+  envs: EnvType[];
+  /** Package manager */
+  packageManager: PackageManagerType;
   /** Files to copy from project root to each clone */
   copy: string[];
   /** Docker network to join (optional) */
@@ -15,6 +22,8 @@ export interface ProjectConfig {
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
+  envs: ["nodejs"],
+  packageManager: "npm",
   copy: [],
   network: null,
   init: [],
@@ -36,6 +45,8 @@ export function loadProjectConfig(): ProjectConfig {
     const content = readFileSync(configPath, "utf-8");
     const parsed = JSON.parse(content) as Partial<ProjectConfig>;
     return {
+      envs: parsed.envs ?? DEFAULT_CONFIG.envs,
+      packageManager: parsed.packageManager ?? DEFAULT_CONFIG.packageManager,
       copy: parsed.copy ?? DEFAULT_CONFIG.copy,
       network: parsed.network ?? DEFAULT_CONFIG.network,
       init: parsed.init ?? DEFAULT_CONFIG.init,

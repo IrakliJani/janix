@@ -1,12 +1,10 @@
 import { Command } from "commander";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   containerName,
   findIkagentRoot,
+  getIkagentDir,
   getProjectName,
   getProjectRoot,
-  IKAGENT_ROOT,
 } from "../lib/config.js";
 import {
   getContainer,
@@ -28,7 +26,8 @@ export const createCommand = new Command("create")
   .description("Create a new dev environment for a branch")
   .argument("[branch]", "Branch name (interactive picker if not provided)")
   .option("--no-attach", "Don't attach to container after creation")
-  .action(async (branchArg: string | undefined, options: { attach: boolean }) => {
+  .option("--rebuild", "Force rebuild the Docker image")
+  .action(async (branchArg: string | undefined, options: { attach: boolean; rebuild: boolean }) => {
     // Verify we're in an ikagent project
     if (!findIkagentRoot()) {
       console.error("Not in an ikagent project. Run 'ikagent init' first.");
@@ -63,19 +62,15 @@ export const createCommand = new Command("create")
       return;
     }
 
-    // Ensure Docker image exists
-    const dockerfilePath = join(IKAGENT_ROOT, "Dockerfile.ikagent");
-    if (!imageExists()) {
-      if (!existsSync(dockerfilePath)) {
-        console.error(`Dockerfile not found at ${dockerfilePath}`);
-        process.exit(1);
-      }
-      console.log("Building Docker image...");
-      buildImage(dockerfilePath);
-    }
-
     // Load project config
     const projectConfig = loadProjectConfig();
+    const ikagentDir = getIkagentDir();
+
+    // Ensure Docker image exists for this project (or rebuild if requested)
+    if (options.rebuild || !imageExists(project)) {
+      console.log(`Building Docker image for ${project}...`);
+      buildImage(project, ikagentDir);
+    }
 
     // Create clone
     console.log(`Creating clone for branch '${branch}'...`);

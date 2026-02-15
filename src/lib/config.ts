@@ -15,7 +15,6 @@ export const CONFIG_FILE = "config.json";
 
 export const config = {
   // Docker
-  imageName: "ikagent",
   containerPrefix: "ikagent",
 
   // Host paths to mount
@@ -25,6 +24,13 @@ export const config = {
   containerWorkspace: "/workspace",
   containerClaudeConfig: "/root/.config/claude",
 } as const;
+
+/**
+ * Get the Docker image name for a project.
+ */
+export function getProjectImageName(project: string): string {
+  return `ikagent-${project}`;
+}
 
 /**
  * Find .ikagent/ directory by walking up from cwd.

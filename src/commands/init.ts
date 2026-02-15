@@ -3,8 +3,15 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { IKAGENT_DIR, CLONES_DIR } from "../lib/config.js";
 import { isGitRepo, addToGitignore } from "../lib/init.js";
+import { writePackagesNix } from "../lib/nix.js";
 import { saveProjectConfig, type ProjectConfig } from "../lib/project-config.js";
-import { inputMultiLine, selectNetwork, selectCaches } from "../lib/interactive.js";
+import {
+  inputMultiLine,
+  selectCaches,
+  selectEnvironments,
+  selectNetwork,
+  selectPackageManager,
+} from "../lib/interactive.js";
 
 export const initCommand = new Command("init")
   .description("Initialize ikagent in current git repository")
@@ -38,21 +45,28 @@ export const initCommand = new Command("init")
     const clonesDir = join(ikagentDir, CLONES_DIR);
     mkdirSync(clonesDir, { recursive: true });
 
-    // Interactive prompts
+    // Interactive prompts - environment first
     console.log("");
-    const copyFiles = await inputMultiLine("Files to copy to clones:");
+    const envs = await selectEnvironments();
+
+    const packageManager = await selectPackageManager();
+
+    console.log("");
+    const caches = await selectCaches();
 
     console.log("");
     const network = await selectNetwork();
 
     console.log("");
-    const caches = await selectCaches();
+    const copyFiles = await inputMultiLine("Files to copy to clones:");
 
     console.log("");
     const initScripts = await inputMultiLine("Init scripts to run:");
 
     // Save config
     const config: ProjectConfig = {
+      envs,
+      packageManager,
       copy: copyFiles,
       network,
       caches,
@@ -60,6 +74,10 @@ export const initCommand = new Command("init")
     };
     saveProjectConfig(config);
     console.log(`\n✓ Saved ${IKAGENT_DIR}/config.json`);
+
+    // Generate packages.nix
+    writePackagesNix(ikagentDir, config);
+    console.log(`✓ Generated ${IKAGENT_DIR}/packages.nix`);
 
     // Add clones to gitignore
     const gitignoreLine = `${IKAGENT_DIR}/${CLONES_DIR}/`;

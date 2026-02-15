@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { getClonesDir, getClonePath, getProjectRoot } from "./config.js";
 
@@ -21,6 +21,20 @@ function refExists(repoPath: string, ref: string): boolean {
 
 export function fetchAll(repoPath: string): void {
   runGit(["fetch", "--all", "--prune"], repoPath);
+}
+
+export function fetchAllAsync(repoPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["fetch", "--all", "--prune"], {
+      cwd: repoPath,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`git fetch failed with code ${code}`));
+    });
+    child.on("error", reject);
+  });
 }
 
 export function listBranches(repoPath: string): string[] {
@@ -108,11 +122,14 @@ export function createClone(branch: string): string {
   // Branch not in local clone - fetch only this branch from upstream
   if (remoteUrl) {
     try {
-      runGit(["fetch", "upstream", `${branch}:refs/remotes/upstream/${branch}`], clonePath);
-      runGit(["checkout", "-b", branch, `upstream/${branch}`, "--no-track"], clonePath);
+      // Fetch the specific branch from upstream
+      runGit(["fetch", "upstream", branch], clonePath);
+      // Checkout from FETCH_HEAD
+      runGit(["checkout", "-b", branch, "FETCH_HEAD", "--no-track"], clonePath);
       return clonePath;
-    } catch {
-      // Branch doesn't exist upstream either
+    } catch (e) {
+      // Branch doesn't exist upstream either, show error for debugging
+      console.error(`Failed to fetch branch '${branch}' from upstream:`, e);
     }
   }
 
