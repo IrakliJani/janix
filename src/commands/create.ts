@@ -25,8 +25,8 @@ import {
   getImageFlakeHash,
   getImageFlakeNix,
 } from "../lib/docker.js";
-import { branchExists, createClone } from "../lib/git.js";
-import { runInitScripts } from "../lib/init.js";
+import { branchExists, createBranch, createClone } from "../lib/git.js";
+import { runInitScripts, getCurrentBranch } from "../lib/init.js";
 import { selectBranch, confirm } from "../lib/interactive.js";
 import { loadProjectConfig } from "../lib/project-config.js";
 import { loadEnvFiles } from "../lib/env.js";
@@ -84,10 +84,12 @@ export const createCommand = new Command("create")
     // Get branch (interactive or from argument)
     const branch = branchArg ?? (await selectBranch());
 
-    // Check if branch exists
+    // Create branch if it doesn't exist
     if (!branchExists(projectRoot, branch)) {
-      console.error(`Branch '${branch}' does not exist locally or remotely`);
-      process.exit(1);
+      const base = getCurrentBranch(projectRoot);
+      const ok = await confirm(`Branch '${branch}' doesn't exist. Create from '${base}'?`);
+      if (!ok) process.exit(0);
+      createBranch(projectRoot, branch, base);
     }
 
     const name = containerName(project, branch);
@@ -161,9 +163,9 @@ export const createCommand = new Command("create")
       console.log(`Joined network: ${projectConfig.network}`);
     }
 
-    if (projectConfig.caches.length > 0) {
-      console.log(`Cache volume mounted: ${projectConfig.caches.join(", ")}`);
-    }
+    console.log(
+      `Cache volume mounted: nix${projectConfig.caches.length > 0 ? `, ${projectConfig.caches.join(", ")}` : ""}`,
+    );
 
     // Run cache init commands (create dirs, configure package managers)
     const cacheInitCommands = getCacheInitCommands(projectConfig.caches);

@@ -193,6 +193,9 @@ export function createContainer(options: CreateContainerOptions): string {
   const { project, branch, clonePath, network, caches = [], env = {} } = options;
   const name = containerName(project, branch);
 
+  // Always mount cache volume — nix uses it for download cache (XDG_CACHE_HOME)
+  ensureVolumeExists(CACHE_VOLUME);
+
   const args = [
     "run",
     "-d",
@@ -202,22 +205,20 @@ export function createContainer(options: CreateContainerOptions): string {
     `${clonePath}:${config.containerWorkspace}`,
     "-v",
     `${config.claudeConfigDir}:${config.containerClaudeConfig}:ro`,
+    "-v",
+    `${CACHE_VOLUME}:${CACHE_MOUNT_PATH}`,
+    "-e",
+    `XDG_CACHE_HOME=${CACHE_MOUNT_PATH}`,
     "-w",
     config.containerWorkspace,
     "--add-host=host.docker.internal:host-gateway",
   ];
 
-  // Add cache volume if caches are specified
-  if (caches.length > 0) {
-    ensureVolumeExists(CACHE_VOLUME);
-    args.push("-v", `${CACHE_VOLUME}:${CACHE_MOUNT_PATH}`);
-
-    // Add environment variables for each cache
-    for (const cache of caches) {
-      const cacheConfig = CACHE_CONFIGS[cache];
-      for (const [key, value] of Object.entries(cacheConfig.env)) {
-        args.push("-e", `${key}=${value}`);
-      }
+  // Add PM-specific env vars
+  for (const cache of caches) {
+    const cacheConfig = CACHE_CONFIGS[cache];
+    for (const [key, value] of Object.entries(cacheConfig.env)) {
+      args.push("-e", `${key}=${value}`);
     }
   }
 

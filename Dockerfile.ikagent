@@ -1,47 +1,23 @@
 FROM nixos/nix:latest
 
-# Configure Nix for flakes
 COPY nix.conf /etc/nix/nix.conf
 
-# Remove conflicting packages from base image
-RUN nix-env -e git-minimal || true
-
-# Install base tools
-RUN nix-env -iA \
-    nixpkgs.zsh \
-    nixpkgs.git \
-    nixpkgs.findutils \
-    nixpkgs.gnugrep \
-    nixpkgs.gnused \
-    nixpkgs.gawk \
-    nixpkgs.diffutils \
-    nixpkgs.curl \
-    nixpkgs.wget \
-    nixpkgs.jq \
-    nixpkgs.tree \
-    nixpkgs.less \
-    nixpkgs.vim \
-    nixpkgs.ripgrep \
-    nixpkgs.fd \
-    nixpkgs.gnumake \
-    nixpkgs.gcc \
-    nixpkgs.pkg-config \
-    nixpkgs.starship
-
-# Init starship prompt
+# Shell experience — not project tools, so install at image level
+RUN nix-env -iA nixpkgs.zsh nixpkgs.starship
 RUN echo 'eval "$(starship init zsh)"' >> /root/.zshrc
 
-# Copy project flake
+# Copy project flake and pre-build devShell so nix develop is instant at attach time
 COPY flake.nix flake.lock /flake/
 
-# Pre-build devShell so nix develop is instant at attach time
 ARG TARGETARCH
 RUN case "$TARGETARCH" in \
-      amd64) SYSTEM="x86_64-linux" ;; \
-      arm64) SYSTEM="aarch64-linux" ;; \
-      *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
-    esac && \
-    nix build "/flake#devShells.${SYSTEM}.default" --out-link /flake/dev-shell
+      amd64) echo "x86_64-linux" ;; \
+      arm64) echo "aarch64-linux" ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" >&2 && exit 1 ;; \
+    esac > /flake/system
+
+RUN --mount=type=cache,target=/root/.cache/nix \
+    nix build "/flake#devShells.$(cat /flake/system).default" --out-link /flake/dev-shell
 
 WORKDIR /workspace
 

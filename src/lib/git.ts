@@ -175,6 +175,11 @@ export function removeClone(branch: string): void {
   }
 }
 
+export function createBranch(repoPath: string, branch: string, base: string): void {
+  runGit(["checkout", "-b", branch, base], repoPath);
+  runGit(["checkout", "-"], repoPath);
+}
+
 export function branchExists(repoPath: string, branch: string): boolean {
   try {
     runGit(["rev-parse", "--verify", branch], repoPath);
