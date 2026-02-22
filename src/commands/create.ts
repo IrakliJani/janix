@@ -1,10 +1,15 @@
+import { writeFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { Command } from "commander";
 import {
   containerName,
   findIkagentRoot,
-  getIkagentDir,
   getProjectName,
   getProjectRoot,
+  sanitizeBranchForId,
+  sanitizeBranchSafe,
 } from "../lib/config.js";
 import {
   getContainer,
@@ -15,11 +20,48 @@ import {
   isContainerRunning,
   startContainer,
   getCacheInitCommands,
+  assertDockerRunning,
+  computeFlakeHash,
+  getImageFlakeHash,
+  getImageFlakeNix,
 } from "../lib/docker.js";
 import { branchExists, createClone } from "../lib/git.js";
-import { copyFilesToClone, runInitScripts } from "../lib/init.js";
-import { selectBranch } from "../lib/interactive.js";
+import { runInitScripts } from "../lib/init.js";
+import { selectBranch, confirm } from "../lib/interactive.js";
 import { loadProjectConfig } from "../lib/project-config.js";
+import { loadEnvFiles } from "../lib/env.js";
+
+async function promptFlakeRebuild(project: string, projectRoot: string): Promise<boolean> {
+  const currentHash = computeFlakeHash(projectRoot);
+  const imageHash = getImageFlakeHash(project);
+  if (!imageHash || imageHash === currentHash) return false;
+
+  const oldContent = getImageFlakeNix(project);
+  if (oldContent) {
+    const oldTmp = join(tmpdir(), `ikagent-flake-old-${Date.now()}.nix`);
+    try {
+      writeFileSync(oldTmp, oldContent);
+      console.log("\nflake.nix has changed since the image was built:\n");
+      spawnSync(
+        "git",
+        ["diff", "--no-index", "--color=always", oldTmp, join(projectRoot, "flake.nix")],
+        {
+          stdio: "inherit",
+        },
+      );
+    } finally {
+      try {
+        unlinkSync(oldTmp);
+      } catch {
+        /* ignore */
+      }
+    }
+  } else {
+    console.log("\nflake.nix has changed since the image was built.");
+  }
+
+  return confirm("Rebuild Docker image?");
+}
 
 export const createCommand = new Command("create")
   .alias("c")
@@ -33,6 +75,8 @@ export const createCommand = new Command("create")
       console.error("Not in an ikagent project. Run 'ikagent init' first.");
       process.exit(1);
     }
+
+    assertDockerRunning();
 
     const project = getProjectName();
     const projectRoot = getProjectRoot();
@@ -64,24 +108,42 @@ export const createCommand = new Command("create")
 
     // Load project config
     const projectConfig = loadProjectConfig();
-    const ikagentDir = getIkagentDir();
+
+    // Built-in template vars available in override values
+    const ikagentVars: Record<string, string> = {
+      IKAGENT_BRANCH: branch,
+      IKAGENT_PROJECT: project,
+      IKAGENT_BRANCH_SLUG: sanitizeBranchForId(branch),
+      IKAGENT_BRANCH_SAFE: sanitizeBranchSafe(branch),
+    };
+
+    const resolveTemplateVars = (value: string): string =>
+      value.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, name) => ikagentVars[name] ?? `$${name}`);
+
+    // Load env files and apply stored overrides (with template var resolution)
+    let env: Record<string, string> = {};
+    if (projectConfig.envFiles.length > 0) {
+      env = loadEnvFiles(projectConfig.envFiles, projectRoot);
+    }
+    if (Object.keys(projectConfig.envOverrides).length > 0) {
+      const resolvedOverrides = Object.fromEntries(
+        Object.entries(projectConfig.envOverrides).map(([k, v]) => [k, resolveTemplateVars(v)]),
+      );
+      env = { ...env, ...resolvedOverrides };
+    }
 
     // Ensure Docker image exists for this project (or rebuild if requested)
-    if (options.rebuild || !imageExists(project)) {
+    const needsBuild =
+      !imageExists(project) || options.rebuild || (await promptFlakeRebuild(project, projectRoot));
+    if (needsBuild) {
       console.log(`Building Docker image for ${project}...`);
-      buildImage(project, ikagentDir);
+      buildImage(project, projectRoot);
     }
 
     // Create clone
     console.log(`Creating clone for branch '${branch}'...`);
     const clonePath = createClone(branch);
     console.log(`Clone created at ${clonePath}`);
-
-    // Copy files from project root to clone
-    if (projectConfig.copy.length > 0) {
-      console.log("Copying files...");
-      copyFilesToClone(projectConfig.copy, clonePath);
-    }
 
     // Create container
     console.log("Creating container...");
@@ -91,6 +153,7 @@ export const createCommand = new Command("create")
       clonePath,
       network: projectConfig.network,
       caches: projectConfig.caches,
+      env,
     });
     console.log(`Container created: ${containerId.slice(0, 12)}`);
 
@@ -112,7 +175,12 @@ export const createCommand = new Command("create")
     // Run user init scripts
     if (projectConfig.init.length > 0) {
       console.log("Running init scripts...");
-      runInitScripts(projectConfig.init, name);
+      runInitScripts(projectConfig.init, name, {
+        IKAGENT_BRANCH: branch,
+        IKAGENT_PROJECT: project,
+        IKAGENT_BRANCH_SLUG: sanitizeBranchForId(branch),
+        IKAGENT_BRANCH_SAFE: sanitizeBranchSafe(branch),
+      });
     }
 
     // Attach if requested

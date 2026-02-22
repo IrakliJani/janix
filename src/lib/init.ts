@@ -1,44 +1,42 @@
 import { execSync, spawnSync } from "node:child_process";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { getProjectRoot } from "./config.js";
-
-/**
- * Copy files from project root to clone directory.
- */
-export function copyFilesToClone(files: string[], clonePath: string): void {
-  const projectRoot = getProjectRoot();
-
-  for (const file of files) {
-    const sourcePath = join(projectRoot, file);
-    const destPath = join(clonePath, file);
-
-    if (!existsSync(sourcePath)) {
-      console.log(`  Skipping ${file} (not found)`);
-      continue;
-    }
-
-    // Ensure destination directory exists
-    const destDir = dirname(destPath);
-    if (!existsSync(destDir)) {
-      mkdirSync(destDir, { recursive: true });
-    }
-
-    copyFileSync(sourcePath, destPath);
-    console.log(`  Copied ${file}`);
-  }
-}
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "./config.js";
 
 /**
  * Run init scripts in the container.
  */
-export function runInitScripts(scripts: string[], containerName: string): void {
+export function runInitScripts(
+  scripts: string[],
+  containerName: string,
+  env: Record<string, string> = {},
+): void {
+  const envArgs = Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+
   for (const script of scripts) {
     console.log(`Running ${script}...`);
 
-    const result = spawnSync("docker", ["exec", containerName, "bash", "-c", script], {
-      stdio: "inherit",
-    });
+    // Run via nix develop so devShell packages (psql, node, etc.) are available.
+    // For .sh files, explicitly invoke bash to avoid shebang interpreter issues in nix containers.
+    const cmd = /\S+\.sh(\s|$)/.test(script) ? `bash ${script}` : script;
+    const result = spawnSync(
+      "docker",
+      [
+        "exec",
+        "-w",
+        config.containerWorkspace,
+        ...envArgs,
+        containerName,
+        "nix",
+        "develop",
+        "/flake",
+        "--command",
+        "bash",
+        "-c",
+        cmd,
+      ],
+      { stdio: "inherit" },
+    );
 
     if (result.status !== 0) {
       console.error(`Script ${script} failed with exit code ${result.status}`);
@@ -63,6 +61,21 @@ export function addToGitignore(projectRoot: string, line: string): boolean {
   const newLine = existsSync(gitignorePath) ? `\n${line}\n` : `${line}\n`;
   appendFileSync(gitignorePath, newLine);
   return true;
+}
+
+/**
+ * Get the current git branch name.
+ */
+export function getCurrentBranch(repoPath: string): string {
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd: repoPath,
+      stdio: ["pipe", "pipe", "pipe"],
+      encoding: "utf-8",
+    }).trim();
+  } catch {
+    return "main";
+  }
 }
 
 /**

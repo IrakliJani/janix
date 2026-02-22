@@ -1,8 +1,16 @@
 import { Command } from "commander";
-import { containerName, findIkagentRoot, getProjectName } from "../lib/config.js";
-import { getContainer, removeContainer } from "../lib/docker.js";
+import {
+  containerName,
+  findIkagentRoot,
+  getProjectName,
+  sanitizeBranchForId,
+  sanitizeBranchSafe,
+} from "../lib/config.js";
+import { getContainer, removeContainer, assertDockerRunning } from "../lib/docker.js";
 import { listClones, removeClone } from "../lib/git.js";
+import { runInitScripts } from "../lib/init.js";
 import { selectClone, confirm } from "../lib/interactive.js";
+import { loadProjectConfig } from "../lib/project-config.js";
 
 export const destroyCommand = new Command("destroy")
   .alias("rm")
@@ -15,6 +23,8 @@ export const destroyCommand = new Command("destroy")
       console.error("Not in an ikagent project. Run 'ikagent init' first.");
       process.exit(1);
     }
+
+    assertDockerRunning();
 
     const project = getProjectName();
     const clones = listClones();
@@ -52,8 +62,25 @@ export const destroyCommand = new Command("destroy")
       }
     }
 
-    // Remove container if it exists
+    // Run teardown scripts before removing container
+    const projectConfig = loadProjectConfig();
     const container = getContainer(project, clone.branch);
+    if (container && projectConfig.teardown.length > 0) {
+      const name = containerName(project, clone.branch);
+      console.log("Running teardown scripts...");
+      try {
+        runInitScripts(projectConfig.teardown, name, {
+          IKAGENT_BRANCH: clone.branch,
+          IKAGENT_PROJECT: project,
+          IKAGENT_BRANCH_SLUG: sanitizeBranchForId(clone.branch),
+          IKAGENT_BRANCH_SAFE: sanitizeBranchSafe(clone.branch),
+        });
+      } catch {
+        console.warn("Teardown scripts failed, continuing with destroy...");
+      }
+    }
+
+    // Remove container if it exists
     if (container) {
       const name = containerName(project, clone.branch);
       console.log(`Removing container ${name}...`);

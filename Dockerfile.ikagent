@@ -3,25 +3,46 @@ FROM nixos/nix:latest
 # Configure Nix for flakes
 COPY nix.conf /etc/nix/nix.conf
 
-# Copy package list
-COPY packages.nix /etc/ikagent/
-
 # Remove conflicting packages from base image
 RUN nix-env -e git-minimal || true
 
-# Install packages directly with nix-env (no home-manager needed)
-RUN nix-env -iA nixpkgs.zsh nixpkgs.git \
-    nixpkgs.findutils nixpkgs.gnugrep nixpkgs.gnused nixpkgs.gawk nixpkgs.diffutils \
-    nixpkgs.curl nixpkgs.wget nixpkgs.jq nixpkgs.tree nixpkgs.less nixpkgs.vim \
-    nixpkgs.ripgrep nixpkgs.fd \
-    nixpkgs.gnumake nixpkgs.gcc nixpkgs.pkg-config
+# Install base tools
+RUN nix-env -iA \
+    nixpkgs.zsh \
+    nixpkgs.git \
+    nixpkgs.findutils \
+    nixpkgs.gnugrep \
+    nixpkgs.gnused \
+    nixpkgs.gawk \
+    nixpkgs.diffutils \
+    nixpkgs.curl \
+    nixpkgs.wget \
+    nixpkgs.jq \
+    nixpkgs.tree \
+    nixpkgs.less \
+    nixpkgs.vim \
+    nixpkgs.ripgrep \
+    nixpkgs.fd \
+    nixpkgs.gnumake \
+    nixpkgs.gcc \
+    nixpkgs.pkg-config \
+    nixpkgs.starship
 
-# Install project-specific packages from packages.nix
-RUN nix-env -if /etc/ikagent/packages.nix
+# Init starship prompt
+RUN echo 'eval "$(starship init zsh)"' >> /root/.zshrc
 
-# Set shell
-ENV SHELL=/root/.nix-profile/bin/zsh
+# Copy project flake
+COPY flake.nix flake.lock /flake/
+
+# Pre-build devShell so nix develop is instant at attach time
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) SYSTEM="x86_64-linux" ;; \
+      arm64) SYSTEM="aarch64-linux" ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+    esac && \
+    nix build "/flake#devShells.${SYSTEM}.default" --out-link /flake/dev-shell
 
 WORKDIR /workspace
 
-CMD ["zsh", "-l"]
+CMD ["sleep", "infinity"]

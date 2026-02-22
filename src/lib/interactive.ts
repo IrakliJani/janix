@@ -1,29 +1,20 @@
-import { confirm as inquirerConfirm, input, checkbox, select } from "@inquirer/prompts";
+import { confirm as inquirerConfirm, input } from "@inquirer/prompts";
 import search from "@inquirer/search";
 import { getProjectRoot } from "./config.js";
 import { listBranches, fetchAllAsync } from "./git.js";
-import {
-  listContainers,
-  listNetworks,
-  CACHE_CONFIGS,
-  type ContainerInfo,
-  type CacheType,
-} from "./docker.js";
-import { type EnvType, type PackageManagerType } from "./project-config.js";
+import { listContainers, listNetworks, type ContainerInfo } from "./docker.js";
 
 export async function selectBranch(): Promise<string> {
   const projectRoot = getProjectRoot();
 
   // Start with local branches immediately
   let branches = listBranches(projectRoot);
-  let uniqueBranches = [...new Set(branches)].sort();
   let isFetching = true;
 
   // Fetch remote branches in background
   fetchAllAsync(projectRoot)
     .then(() => {
       branches = listBranches(projectRoot);
-      uniqueBranches = [...new Set(branches)].sort();
       isFetching = false;
     })
     .catch(() => {
@@ -34,17 +25,18 @@ export async function selectBranch(): Promise<string> {
     message: "Search for a branch:",
     source: async (term: string | undefined) => {
       const searchTerm = term?.toLowerCase() ?? "";
-      const filtered = uniqueBranches
-        .filter((b) => b.toLowerCase().includes(searchTerm))
+      const filtered = branches
+        .filter((b) => b.name.toLowerCase().includes(searchTerm))
         .slice(0, 20)
-        .map((b) => ({ name: b, value: b }));
+        .map((b) => ({
+          name: b.name,
+          value: b.name,
+          ...(b.author ? { description: b.author } : {}),
+        }));
 
       // Add loading indicator if still fetching
       if (isFetching && filtered.length < 20) {
-        filtered.push({
-          name: "⏳ Fetching remote branches...",
-          value: "__loading__",
-        });
+        filtered.push({ name: "⏳ Fetching remote branches...", value: "__loading__" });
       }
 
       return filtered;
@@ -160,47 +152,78 @@ export async function confirm(message: string): Promise<boolean> {
   return inquirerConfirm({ message, default: false });
 }
 
-export async function selectCaches(): Promise<CacheType[]> {
-  const cacheTypes = Object.keys(CACHE_CONFIGS) as CacheType[];
+const DONE = "__done__";
 
-  const selected = await checkbox({
-    message: "Package manager caches to persist:",
-    choices: cacheTypes.map((cache) => ({
-      name: cache,
-      value: cache,
-    })),
-  });
+/**
+ * Select .env files in load order (each pick appends to the ordered list).
+ */
+export async function selectEnvFiles(available: string[]): Promise<string[]> {
+  const selected: string[] = [];
 
-  return selected;
-}
+  while (true) {
+    const remaining = available.filter((f) => !selected.includes(f));
+    const label =
+      selected.length > 0 ? `Add .env file (order: ${selected.join(" → ")}):` : "Add .env file:";
 
-export async function selectEnvironments(): Promise<EnvType[]> {
-  const selected = await checkbox({
-    message: "Development environments:",
-    choices: [
-      { name: "Node.js", value: "nodejs" as EnvType },
-      { name: "Python", value: "python" as EnvType },
-    ],
-  });
+    const file = await search({
+      message: label,
+      source: async (term) => {
+        const q = term?.toLowerCase() ?? "";
+        return [
+          { name: "(done)", value: DONE },
+          ...selected.map((f, i) => ({ name: `${i + 1}. ✓ ${f}  [remove]`, value: `remove:${f}` })),
+          ...remaining
+            .filter((f) => f.toLowerCase().includes(q))
+            .map((f) => ({ name: f, value: f })),
+        ];
+      },
+    });
 
-  if (selected.length === 0) {
-    console.error("At least one environment is required");
-    return selectEnvironments();
+    if (file === DONE) break;
+    if (file.startsWith("remove:")) {
+      selected.splice(selected.indexOf(file.slice(7)), 1);
+    } else {
+      selected.push(file);
+    }
   }
 
   return selected;
 }
 
-export async function selectPackageManager(): Promise<PackageManagerType> {
-  const pm = await select({
-    message: "Package manager:",
-    choices: [
-      { name: "pnpm", value: "pnpm" as PackageManagerType },
-      { name: "npm", value: "npm" as PackageManagerType },
-      { name: "bun", value: "bun" as PackageManagerType },
-      { name: "yarn", value: "yarn" as PackageManagerType },
-    ],
-  });
+/**
+ * Prompt to override specific env vars. Shows keys only (no values).
+ */
+export async function selectEnvOverrides(
+  vars: Record<string, string>,
+): Promise<Record<string, string>> {
+  const overrides: Record<string, string> = {};
+  const keys = Object.keys(vars).sort();
 
-  return pm;
+  while (true) {
+    const overrideCount = Object.keys(overrides).length;
+    const key = await search({
+      message:
+        overrideCount > 0
+          ? `Override env var (${overrideCount} overridden):`
+          : "Override env var (or done to skip):",
+      source: async (term) => {
+        const q = term?.toLowerCase() ?? "";
+        return [
+          { name: "(done)", value: DONE },
+          ...keys
+            .filter((k) => k.toLowerCase().includes(q))
+            .map((k) => ({
+              name: overrides[k] !== undefined ? `${k}  ✓` : k,
+              value: k,
+            })),
+        ];
+      },
+    });
+
+    if (key === DONE) break;
+    const value = await input({ message: `${key}=` });
+    overrides[key] = value;
+  }
+
+  return overrides;
 }

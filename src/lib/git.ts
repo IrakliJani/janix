@@ -37,12 +37,44 @@ export function fetchAllAsync(repoPath: string): Promise<void> {
   });
 }
 
-export function listBranches(repoPath: string): string[] {
-  const output = runGit(["branch", "-a", "--format=%(refname:short)"], repoPath);
-  return output
-    .split("\n")
-    .filter((b) => b && !b.includes("HEAD"))
-    .map((b) => b.replace("origin/", ""));
+export interface BranchInfo {
+  name: string;
+  author: string;
+}
+
+export function listBranches(repoPath: string): BranchInfo[] {
+  // Sort by committerdate descending (most recent first), deduplicate by stripped name
+  const output = runGit(
+    [
+      "for-each-ref",
+      "--sort=-committerdate",
+      "--format=%(refname)|%(authorname)",
+      "refs/heads",
+      "refs/remotes",
+    ],
+    repoPath,
+  );
+  const seen = new Set<string>();
+  const branches: BranchInfo[] = [];
+  for (const line of output.split("\n")) {
+    if (!line || line.includes("HEAD")) continue;
+    const [refname = "", author = ""] = line.split("|");
+    let name: string;
+    if (refname.startsWith("refs/heads/")) {
+      name = refname.slice("refs/heads/".length);
+    } else if (refname.startsWith("refs/remotes/")) {
+      // Strip "refs/remotes/<remote>/" — remote name is the first path segment
+      const withoutPrefix = refname.slice("refs/remotes/".length);
+      name = withoutPrefix.slice(withoutPrefix.indexOf("/") + 1);
+    } else {
+      continue;
+    }
+    if (!seen.has(name)) {
+      seen.add(name);
+      branches.push({ name, author });
+    }
+  }
+  return branches;
 }
 
 export function listLocalBranches(repoPath: string): string[] {

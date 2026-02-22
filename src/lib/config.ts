@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import slugify from "@sindresorhus/slugify";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -29,7 +30,7 @@ export const config = {
  * Get the Docker image name for a project.
  */
 export function getProjectImageName(project: string): string {
-  return `ikagent-${project}`;
+  return `ikagent/${project}`;
 }
 
 /**
@@ -109,6 +110,18 @@ export function getClonePath(branch: string): string {
  */
 export function sanitizeBranchForContainer(branch: string): string {
   return branch.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-");
+}
+
+/**
+ * Sanitize branch name for use in file names, database names, etc.
+ * Replaces all non-alphanumeric characters with underscores, lowercased.
+ */
+export function sanitizeBranchForId(branch: string): string {
+  return slugify(branch, { separator: "-" });
+}
+
+export function sanitizeBranchSafe(branch: string): string {
+  return slugify(branch, { separator: "_" });
 }
 
 /**

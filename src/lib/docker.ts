@@ -1,8 +1,58 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { config, containerName, getProjectImageName, IKAGENT_ROOT } from "./config.js";
+
+const FLAKE_HASH_LABEL = "ikagent.flake.hash";
+
+export function computeFlakeHash(projectRoot: string): string {
+  const hash = createHash("sha256");
+  hash.update(readFileSync(join(projectRoot, "flake.nix")));
+  const lockPath = join(projectRoot, "flake.lock");
+  if (existsSync(lockPath)) hash.update(readFileSync(lockPath));
+  return hash.digest("hex").slice(0, 16);
+}
+
+export function getImageFlakeHash(project: string): string | null {
+  const imageName = getProjectImageName(project);
+  try {
+    const out = runDocker([
+      "inspect",
+      "--format",
+      `{{index .Config.Labels "${FLAKE_HASH_LABEL}"}}`,
+      imageName,
+    ]);
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+export function getImageFlakeNix(project: string): string | null {
+  const imageName = getProjectImageName(project);
+  // Create a stopped container, copy the file out, then remove it (faster than docker run)
+  const create = spawnSync("docker", ["create", imageName], {
+    encoding: "utf-8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  if (create.status !== 0) return null;
+  const cid = create.stdout.trim();
+  const tmpPath = join(tmpdir(), `ikagent-flake-${Date.now()}.nix`);
+  try {
+    const cp = spawnSync("docker", ["cp", `${cid}:/flake/flake.nix`, tmpPath], { stdio: "pipe" });
+    if (cp.status !== 0) return null;
+    return readFileSync(tmpPath, "utf-8");
+  } finally {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
+    spawnSync("docker", ["rm", cid], { stdio: "pipe" });
+  }
+}
 
 export const CACHE_VOLUME = "ikagent-cache";
 export const CACHE_MOUNT_PATH = "/cache";
@@ -10,16 +60,16 @@ export const CACHE_MOUNT_PATH = "/cache";
 /** Predefined cache configurations for package managers */
 export const CACHE_CONFIGS = {
   pnpm: {
-    env: { PNPM_HOME: `${CACHE_MOUNT_PATH}/pnpm` },
-    init: ["mkdir -p /cache/pnpm"],
+    env: {},
+    init: ["mkdir -p /cache/pnpm/store", "pnpm config set store-dir /cache/pnpm/store"],
   },
   bun: {
-    env: { BUN_INSTALL: `${CACHE_MOUNT_PATH}/bun` },
+    env: { BUN_INSTALL_CACHE_DIR: `${CACHE_MOUNT_PATH}/bun` },
     init: ["mkdir -p /cache/bun"],
   },
   npm: {
-    env: {},
-    init: ["mkdir -p /cache/npm", "npm config set cache /cache/npm"],
+    env: { npm_config_cache: `${CACHE_MOUNT_PATH}/npm` },
+    init: ["mkdir -p /cache/npm"],
   },
   yarn: {
     env: { YARN_CACHE_FOLDER: `${CACHE_MOUNT_PATH}/yarn` },
@@ -63,7 +113,15 @@ export function imageExists(project: string): boolean {
   }
 }
 
-export function buildImage(project: string, ikagentDir: string): void {
+export function assertDockerRunning(): void {
+  const result = spawnSync("docker", ["info"], { stdio: "pipe" });
+  if (result.status !== 0) {
+    console.error("Docker is not running. Please start Docker and try again.");
+    process.exit(1);
+  }
+}
+
+export function buildImage(project: string, projectRoot: string): void {
   const imageName = getProjectImageName(project);
 
   // Create temp build context with all necessary files
@@ -78,12 +136,27 @@ export function buildImage(project: string, ikagentDir: string): void {
     );
     copyFileSync(join(IKAGENT_ROOT, "nix.conf"), join(buildContext, "nix.conf"));
 
-    // Copy project-specific packages.nix
-    copyFileSync(join(ikagentDir, "packages.nix"), join(buildContext, "packages.nix"));
+    // Copy project's flake files
+    copyFileSync(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));
+    const flakeLock = join(projectRoot, "flake.lock");
+    if (existsSync(flakeLock)) {
+      copyFileSync(flakeLock, join(buildContext, "flake.lock"));
+    }
+
+    const flakeHash = computeFlakeHash(projectRoot);
 
     const result = spawnSync(
       "docker",
-      ["build", "-t", imageName, "-f", "Dockerfile.ikagent", "."],
+      [
+        "build",
+        "-t",
+        imageName,
+        "--label",
+        `${FLAKE_HASH_LABEL}=${flakeHash}`,
+        "-f",
+        "Dockerfile.ikagent",
+        ".",
+      ],
       {
         cwd: buildContext,
         stdio: "inherit",
@@ -105,6 +178,7 @@ export interface CreateContainerOptions {
   clonePath: string;
   network?: string | null;
   caches?: CacheType[];
+  env?: Record<string, string>;
 }
 
 export function ensureVolumeExists(volumeName: string): void {
@@ -116,7 +190,7 @@ export function ensureVolumeExists(volumeName: string): void {
 }
 
 export function createContainer(options: CreateContainerOptions): string {
-  const { project, branch, clonePath, network, caches = [] } = options;
+  const { project, branch, clonePath, network, caches = [], env = {} } = options;
   const name = containerName(project, branch);
 
   const args = [
@@ -145,6 +219,11 @@ export function createContainer(options: CreateContainerOptions): string {
         args.push("-e", `${key}=${value}`);
       }
     }
+  }
+
+  // Add env vars
+  for (const [key, value] of Object.entries(env)) {
+    args.push("-e", `${key}=${value}`);
   }
 
   // Add network if specified
@@ -197,33 +276,23 @@ export function getContainer(project: string, branch: string): ContainerInfo | u
   return containers.find((c) => c.name === name);
 }
 
-export function getContainerByName(nameOrId: string): ContainerInfo | undefined {
-  const containers = listContainers();
-  const term = nameOrId.toLowerCase();
-
-  // Exact match on name or ID prefix
-  const exact = containers.find((c) => c.name === nameOrId || c.id.startsWith(nameOrId));
-  if (exact) return exact;
-
-  // Match project/branch pattern (e.g., "foo/bar" or "foo-bar")
-  const matches = containers.filter((c) => {
-    const projectBranch = `${c.project}/${c.branch}`.toLowerCase();
-    const projectBranchDash = `${c.project}-${c.branch}`.toLowerCase();
-    return (
-      projectBranch.includes(term) ||
-      projectBranchDash.includes(term) ||
-      c.name.toLowerCase().includes(term)
-    );
-  });
-
-  // Return single match, undefined if ambiguous
-  return matches.length === 1 ? matches[0] : undefined;
-}
-
 export function attachToContainer(name: string): void {
-  const child = spawn("docker", ["exec", "-it", name, "zsh"], {
-    stdio: "inherit",
-  });
+  const child = spawn(
+    "docker",
+    [
+      "exec",
+      "-it",
+      "-w",
+      config.containerWorkspace,
+      name,
+      "nix",
+      "develop",
+      "/flake",
+      "--command",
+      "zsh",
+    ],
+    { stdio: "inherit" },
+  );
 
   child.on("exit", (code) => {
     process.exit(code ?? 0);
@@ -248,8 +317,11 @@ export function removeContainer(name: string): void {
 }
 
 export function isContainerRunning(name: string): boolean {
-  const container = getContainerByName(name);
-  return container?.status.toLowerCase().includes("up") ?? false;
+  const result = spawnSync("docker", ["inspect", "--format={{.State.Running}}", name], {
+    encoding: "utf-8",
+    stdio: "pipe",
+  });
+  return result.status === 0 && result.stdout.trim() === "true";
 }
 
 /**

@@ -3,30 +3,30 @@ import { dirname } from "node:path";
 import { getConfigPath, findIkagentRoot } from "./config.js";
 import { type CacheType } from "./docker.js";
 
-export type EnvType = "nodejs" | "python";
-export type PackageManagerType = "pnpm" | "npm" | "bun" | "yarn";
-
 export interface ProjectConfig {
-  /** Development environments */
-  envs: EnvType[];
   /** Package manager */
-  packageManager: PackageManagerType;
-  /** Files to copy from project root to each clone */
-  copy: string[];
+  packageManager: string;
+  /** .env files to load in order (later overrides earlier) */
+  envFiles: string[];
+  /** Env var overrides (values may contain $IKAGENT_BRANCH etc.) */
+  envOverrides: Record<string, string>;
   /** Docker network to join (optional) */
   network: string | null;
   /** Init scripts to run after clone creation */
   init: string[];
+  /** Teardown scripts to run before destroying the environment */
+  teardown: string[];
   /** Package manager caches to mount (pnpm, bun, npm, yarn) */
   caches: CacheType[];
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
-  envs: ["nodejs"],
   packageManager: "npm",
-  copy: [],
+  envFiles: [],
+  envOverrides: {},
   network: null,
   init: [],
+  teardown: [],
   caches: [],
 };
 
@@ -45,11 +45,12 @@ export function loadProjectConfig(): ProjectConfig {
     const content = readFileSync(configPath, "utf-8");
     const parsed = JSON.parse(content) as Partial<ProjectConfig>;
     return {
-      envs: parsed.envs ?? DEFAULT_CONFIG.envs,
       packageManager: parsed.packageManager ?? DEFAULT_CONFIG.packageManager,
-      copy: parsed.copy ?? DEFAULT_CONFIG.copy,
+      envFiles: parsed.envFiles ?? DEFAULT_CONFIG.envFiles,
+      envOverrides: parsed.envOverrides ?? DEFAULT_CONFIG.envOverrides,
       network: parsed.network ?? DEFAULT_CONFIG.network,
       init: parsed.init ?? DEFAULT_CONFIG.init,
+      teardown: parsed.teardown ?? DEFAULT_CONFIG.teardown,
       caches: parsed.caches ?? DEFAULT_CONFIG.caches,
     };
   } catch {
