@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync }
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { config, containerName, getProjectImageName, JANIX_ROOT } from "./config.js";
+import { config, containerName, getProjectImageName, JANIX_SUPPORT } from "./config.js";
 
 const FLAKE_HASH_LABEL = "janix.flake.hash";
 
@@ -130,8 +130,8 @@ export function buildImage(project: string, projectRoot: string): void {
 
   try {
     // Copy files from janix repo
-    copyFileSync(join(JANIX_ROOT, "Dockerfile.janix"), join(buildContext, "Dockerfile.janix"));
-    copyFileSync(join(JANIX_ROOT, "nix.conf"), join(buildContext, "nix.conf"));
+    copyFileSync(join(JANIX_SUPPORT, "Dockerfile.janix"), join(buildContext, "Dockerfile.janix"));
+    copyFileSync(join(JANIX_SUPPORT, "nix.conf"), join(buildContext, "nix.conf"));
 
     // Copy project's flake files
     copyFileSync(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));

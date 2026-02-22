@@ -6,7 +6,7 @@
   "bin": {
     "janix": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": ["dist", "support"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

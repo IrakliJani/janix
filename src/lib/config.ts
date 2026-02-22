@@ -6,8 +6,9 @@ import slugify from "@sindresorhus/slugify";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Root of janix repo (up from src/lib/)
+// Root of janix package (up from dist/lib/)
 export const JANIX_ROOT = resolve(__dirname, "../..");
+export const JANIX_SUPPORT = join(JANIX_ROOT, "support");
 
 // Directory name for janix config
 export const JANIX_DIR = ".janix";
