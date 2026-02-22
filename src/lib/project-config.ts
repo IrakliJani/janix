@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { getConfigPath, findIkagentRoot } from "./config.js";
+import { getConfigPath, findJanixRoot } from "./config.js";
 import { type CacheType } from "./docker.js";
 
 export interface ProjectConfig {
@@ -77,5 +77,5 @@ export function saveProjectConfig(config: ProjectConfig): void {
  * Check if janix is initialized in current directory tree.
  */
 export function isInitialized(): boolean {
-  return findIkagentRoot() !== null;
+  return findJanixRoot() !== null;
 }

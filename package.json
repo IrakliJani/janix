@@ -1,6 +1,7 @@
 {
   "name": "janix",
   "version": "0.1.0",
+  "description": "Isolated Docker + Nix dev environments per git branch",
   "type": "module",
   "bin": {
     "janix": "./dist/cli.js"

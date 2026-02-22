@@ -1,6 +1,6 @@
 # janix
 
-Janix creates isolated Docker dev environments per git branch. Each branch gets its own git clone, Docker container, and Nix-based environment — so you can work on multiple branches simultaneously without conflicts.
+Janix creates isolated Docker + Nix dev environments per git branch. Each branch gets its own git clone, Docker container, and Nix-based environment — so you can work on multiple branches simultaneously without conflicts.
 
 Each container mounts your Claude config, so Claude Code works inside environments out of the box.
 

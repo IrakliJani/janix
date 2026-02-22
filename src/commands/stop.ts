@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { containerName, findIkagentRoot, getProjectName } from "../lib/config.js";
+import { containerName, findJanixRoot, getProjectName } from "../lib/config.js";
 import { getContainer, stopContainer } from "../lib/docker.js";
 import { listClones } from "../lib/git.js";
 import { selectClone } from "../lib/interactive.js";
@@ -10,7 +10,7 @@ export const stopCommand = new Command("stop")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {
     // Verify we're in a janix project
-    if (!findIkagentRoot()) {
+    if (!findJanixRoot()) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }

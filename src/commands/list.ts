@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import {
   config,
-  findIkagentRoot,
+  findJanixRoot,
   getProjectName,
   sanitizeBranchForContainer,
 } from "../lib/config.js";
@@ -13,7 +13,7 @@ export const listCommand = new Command("list")
   .description("List dev environments for this project")
   .action(() => {
     // Verify we're in a janix project
-    if (!findIkagentRoot()) {
+    if (!findJanixRoot()) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }

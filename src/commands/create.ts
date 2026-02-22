@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { Command } from "commander";
 import {
   containerName,
-  findIkagentRoot,
+  findJanixRoot,
   getProjectName,
   getProjectRoot,
   sanitizeBranchForId,
@@ -71,7 +71,7 @@ export const createCommand = new Command("create")
   .option("--rebuild", "Force rebuild the Docker image")
   .action(async (branchArg: string | undefined, options: { attach: boolean; rebuild: boolean }) => {
     // Verify we're in a janix project
-    if (!findIkagentRoot()) {
+    if (!findJanixRoot()) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }

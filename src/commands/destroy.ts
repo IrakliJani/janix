@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import {
   containerName,
-  findIkagentRoot,
+  findJanixRoot,
   getProjectName,
   sanitizeBranchForId,
   sanitizeBranchSafe,
@@ -19,7 +19,7 @@ export const destroyCommand = new Command("destroy")
   .option("-f, --force", "Skip confirmation")
   .action(async (cloneArg: string | undefined, options: { force: boolean }) => {
     // Verify we're in a janix project
-    if (!findIkagentRoot()) {
+    if (!findJanixRoot()) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }

@@ -37,7 +37,7 @@ export function getProjectImageName(project: string): string {
  * Find .janix/ directory by walking up from cwd.
  * Returns the path to the .janix/ directory, or null if not found.
  */
-export function findIkagentRoot(): string | null {
+export function findJanixRoot(): string | null {
   let current = process.cwd();
   const root = resolve("/");
 
@@ -57,7 +57,7 @@ export function findIkagentRoot(): string | null {
  * Throws if not in a janix project.
  */
 export function getProjectRoot(): string {
-  const janixRoot = findIkagentRoot();
+  const janixRoot = findJanixRoot();
   if (!janixRoot) {
     throw new Error("Not in a janix project. Run 'janix init' first.");
   }
@@ -75,8 +75,8 @@ export function getProjectName(): string {
  * Get the .janix/ directory path.
  * Throws if not in a janix project.
  */
-export function getIkagentDir(): string {
-  const janixRoot = findIkagentRoot();
+export function getJanixDir(): string {
+  const janixRoot = findJanixRoot();
   if (!janixRoot) {
     throw new Error("Not in a janix project. Run 'janix init' first.");
   }
@@ -87,14 +87,14 @@ export function getIkagentDir(): string {
  * Get the clones directory path (.janix/clones/).
  */
 export function getClonesDir(): string {
-  return join(getIkagentDir(), CLONES_DIR);
+  return join(getJanixDir(), CLONES_DIR);
 }
 
 /**
  * Get the config file path (.janix/config.json).
  */
 export function getConfigPath(): string {
-  return join(getIkagentDir(), CONFIG_FILE);
+  return join(getJanixDir(), CONFIG_FILE);
 }
 
 /**
