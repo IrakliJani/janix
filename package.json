@@ -5,6 +5,7 @@
   "bin": {
     "janix": "./dist/cli.js"
   },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -15,7 +16,7 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "check": "npm run format && npm run lint && npm run typecheck",
-    "docker:build": "docker build -t janix -f Dockerfile.janix ."
+    "prepublishOnly": "npm run check && npm run build"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.2.0",
