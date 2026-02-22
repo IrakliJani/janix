@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { IKAGENT_DIR, CLONES_DIR, sanitizeBranchForId, sanitizeBranchSafe } from "../lib/config.js";
+import { JANIX_DIR, CLONES_DIR, sanitizeBranchForId, sanitizeBranchSafe } from "../lib/config.js";
 import { isGitRepo, addToGitignore, getCurrentBranch } from "../lib/init.js";
 import { saveProjectConfig, type ProjectConfig } from "../lib/project-config.js";
 import { type CacheType } from "../lib/docker.js";
@@ -23,7 +23,7 @@ function detectPackageManager(cwd: string): { pm: string; cache: CacheType } | n
 }
 
 export const initCommand = new Command("init")
-  .description("Initialize ikagent in current git repository")
+  .description("Initialize janix in current git repository")
   .action(async () => {
     const cwd = process.cwd();
 
@@ -37,35 +37,35 @@ export const initCommand = new Command("init")
     // Require flake.nix
     if (!existsSync(join(cwd, "flake.nix"))) {
       console.error("Error: No flake.nix found in project root");
-      console.error("ikagent requires a flake.nix to define the dev environment.");
+      console.error("janix requires a flake.nix to define the dev environment.");
       process.exit(1);
     }
 
     const projectName = basename(cwd);
     const currentBranch = getCurrentBranch(cwd);
     const varHint = [
-      `  ✓ $IKAGENT_PROJECT=${projectName}`,
-      `  ✓ $IKAGENT_BRANCH=${currentBranch}`,
-      `  ✓ $IKAGENT_BRANCH_SLUG=${sanitizeBranchForId(currentBranch)}`,
-      `  ✓ $IKAGENT_BRANCH_SAFE=${sanitizeBranchSafe(currentBranch)}`,
+      `  ✓ $JANIX_PROJECT=${projectName}`,
+      `  ✓ $JANIX_BRANCH=${currentBranch}`,
+      `  ✓ $JANIX_BRANCH_SLUG=${sanitizeBranchForId(currentBranch)}`,
+      `  ✓ $JANIX_BRANCH_SAFE=${sanitizeBranchSafe(currentBranch)}`,
     ].join("\n");
-    const ikagentDir = join(cwd, IKAGENT_DIR);
+    const janixDir = join(cwd, JANIX_DIR);
 
     // Check if already initialized
-    if (existsSync(ikagentDir)) {
-      console.log(`ikagent already initialized in ${projectName}`);
-      console.log(`Config at: ${ikagentDir}/config.json`);
+    if (existsSync(janixDir)) {
+      console.log(`janix already initialized in ${projectName}`);
+      console.log(`Config at: ${janixDir}/config.json`);
       return;
     }
 
-    console.log(`\nInitializing ikagent for ${projectName}...`);
+    console.log(`\nInitializing janix for ${projectName}...`);
 
-    // Create .ikagent directory
-    mkdirSync(ikagentDir, { recursive: true });
-    console.log(`✓ Created ${IKAGENT_DIR}/`);
+    // Create .janix directory
+    mkdirSync(janixDir, { recursive: true });
+    console.log(`✓ Created ${JANIX_DIR}/`);
 
     // Create clones directory
-    const clonesDir = join(ikagentDir, CLONES_DIR);
+    const clonesDir = join(janixDir, CLONES_DIR);
     mkdirSync(clonesDir, { recursive: true });
 
     console.log("✓ Detected flake.nix");
@@ -122,13 +122,13 @@ export const initCommand = new Command("init")
       teardown: teardownScripts,
     };
     saveProjectConfig(config);
-    console.log(`\n✓ Saved ${IKAGENT_DIR}/config.json`);
+    console.log(`\n✓ Saved ${JANIX_DIR}/config.json`);
 
     // Add clones to gitignore
-    const gitignoreLine = `${IKAGENT_DIR}/${CLONES_DIR}/`;
+    const gitignoreLine = `${JANIX_DIR}/${CLONES_DIR}/`;
     if (addToGitignore(cwd, gitignoreLine)) {
       console.log(`✓ Added ${gitignoreLine} to .gitignore`);
     }
 
-    console.log(`\nReady! Run 'ikagent create <branch>' to create a dev environment.`);
+    console.log(`\nReady! Run 'janix create <branch>' to create a dev environment.`);
   });

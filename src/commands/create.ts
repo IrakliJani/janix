@@ -38,7 +38,7 @@ async function promptFlakeRebuild(project: string, projectRoot: string): Promise
 
   const oldContent = getImageFlakeNix(project);
   if (oldContent) {
-    const oldTmp = join(tmpdir(), `ikagent-flake-old-${Date.now()}.nix`);
+    const oldTmp = join(tmpdir(), `janix-flake-old-${Date.now()}.nix`);
     try {
       writeFileSync(oldTmp, oldContent);
       console.log("\nflake.nix has changed since the image was built:\n");
@@ -70,9 +70,9 @@ export const createCommand = new Command("create")
   .option("--no-attach", "Don't attach to container after creation")
   .option("--rebuild", "Force rebuild the Docker image")
   .action(async (branchArg: string | undefined, options: { attach: boolean; rebuild: boolean }) => {
-    // Verify we're in an ikagent project
+    // Verify we're in a janix project
     if (!findIkagentRoot()) {
-      console.error("Not in an ikagent project. Run 'ikagent init' first.");
+      console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
@@ -112,15 +112,15 @@ export const createCommand = new Command("create")
     const projectConfig = loadProjectConfig();
 
     // Built-in template vars available in override values
-    const ikagentVars: Record<string, string> = {
-      IKAGENT_BRANCH: branch,
-      IKAGENT_PROJECT: project,
-      IKAGENT_BRANCH_SLUG: sanitizeBranchForId(branch),
-      IKAGENT_BRANCH_SAFE: sanitizeBranchSafe(branch),
+    const janixVars: Record<string, string> = {
+      JANIX_BRANCH: branch,
+      JANIX_PROJECT: project,
+      JANIX_BRANCH_SLUG: sanitizeBranchForId(branch),
+      JANIX_BRANCH_SAFE: sanitizeBranchSafe(branch),
     };
 
     const resolveTemplateVars = (value: string): string =>
-      value.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, name) => ikagentVars[name] ?? `$${name}`);
+      value.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, name) => janixVars[name] ?? `$${name}`);
 
     // Load env files and apply stored overrides (with template var resolution)
     let env: Record<string, string> = {};
@@ -178,10 +178,10 @@ export const createCommand = new Command("create")
     if (projectConfig.init.length > 0) {
       console.log("Running init scripts...");
       runInitScripts(projectConfig.init, name, {
-        IKAGENT_BRANCH: branch,
-        IKAGENT_PROJECT: project,
-        IKAGENT_BRANCH_SLUG: sanitizeBranchForId(branch),
-        IKAGENT_BRANCH_SAFE: sanitizeBranchSafe(branch),
+        JANIX_BRANCH: branch,
+        JANIX_PROJECT: project,
+        JANIX_BRANCH_SLUG: sanitizeBranchForId(branch),
+        JANIX_BRANCH_SAFE: sanitizeBranchSafe(branch),
       });
     }
 
@@ -190,6 +190,6 @@ export const createCommand = new Command("create")
       console.log("Attaching to container...");
       attachToContainer(name);
     } else {
-      console.log(`\nTo attach: ikagent attach ${branch}`);
+      console.log(`\nTo attach: janix attach ${branch}`);
     }
   });

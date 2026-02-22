@@ -6,17 +6,17 @@ import slugify from "@sindresorhus/slugify";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Root of ikagent repo (up from src/lib/)
-export const IKAGENT_ROOT = resolve(__dirname, "../..");
+// Root of janix repo (up from src/lib/)
+export const JANIX_ROOT = resolve(__dirname, "../..");
 
-// Directory name for ikagent config
-export const IKAGENT_DIR = ".ikagent";
+// Directory name for janix config
+export const JANIX_DIR = ".janix";
 export const CLONES_DIR = "clones";
 export const CONFIG_FILE = "config.json";
 
 export const config = {
   // Docker
-  containerPrefix: "ikagent",
+  containerPrefix: "janix",
 
   // Host paths to mount
   claudeConfigDir: join(homedir(), ".config/claude"),
@@ -30,21 +30,21 @@ export const config = {
  * Get the Docker image name for a project.
  */
 export function getProjectImageName(project: string): string {
-  return `ikagent/${project}`;
+  return `janix/${project}`;
 }
 
 /**
- * Find .ikagent/ directory by walking up from cwd.
- * Returns the path to the .ikagent/ directory, or null if not found.
+ * Find .janix/ directory by walking up from cwd.
+ * Returns the path to the .janix/ directory, or null if not found.
  */
 export function findIkagentRoot(): string | null {
   let current = process.cwd();
   const root = resolve("/");
 
   while (current !== root) {
-    const ikagentPath = join(current, IKAGENT_DIR);
-    if (existsSync(ikagentPath)) {
-      return ikagentPath;
+    const janixPath = join(current, JANIX_DIR);
+    if (existsSync(janixPath)) {
+      return janixPath;
     }
     current = dirname(current);
   }
@@ -53,15 +53,15 @@ export function findIkagentRoot(): string | null {
 }
 
 /**
- * Get the project root directory (parent of .ikagent/).
- * Throws if not in an ikagent project.
+ * Get the project root directory (parent of .janix/).
+ * Throws if not in a janix project.
  */
 export function getProjectRoot(): string {
-  const ikagentRoot = findIkagentRoot();
-  if (!ikagentRoot) {
-    throw new Error("Not in an ikagent project. Run 'ikagent init' first.");
+  const janixRoot = findIkagentRoot();
+  if (!janixRoot) {
+    throw new Error("Not in a janix project. Run 'janix init' first.");
   }
-  return dirname(ikagentRoot);
+  return dirname(janixRoot);
 }
 
 /**
@@ -72,26 +72,26 @@ export function getProjectName(): string {
 }
 
 /**
- * Get the .ikagent/ directory path.
- * Throws if not in an ikagent project.
+ * Get the .janix/ directory path.
+ * Throws if not in a janix project.
  */
 export function getIkagentDir(): string {
-  const ikagentRoot = findIkagentRoot();
-  if (!ikagentRoot) {
-    throw new Error("Not in an ikagent project. Run 'ikagent init' first.");
+  const janixRoot = findIkagentRoot();
+  if (!janixRoot) {
+    throw new Error("Not in a janix project. Run 'janix init' first.");
   }
-  return ikagentRoot;
+  return janixRoot;
 }
 
 /**
- * Get the clones directory path (.ikagent/clones/).
+ * Get the clones directory path (.janix/clones/).
  */
 export function getClonesDir(): string {
   return join(getIkagentDir(), CLONES_DIR);
 }
 
 /**
- * Get the config file path (.ikagent/config.json).
+ * Get the config file path (.janix/config.json).
  */
 export function getConfigPath(): string {
   return join(getIkagentDir(), CONFIG_FILE);

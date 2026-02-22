@@ -9,9 +9,9 @@ export const startCommand = new Command("start")
   .description("Start a stopped dev environment")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {
-    // Verify we're in an ikagent project
+    // Verify we're in a janix project
     if (!findIkagentRoot()) {
-      console.error("Not in an ikagent project. Run 'ikagent init' first.");
+      console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
@@ -24,13 +24,13 @@ export const startCommand = new Command("start")
       const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
       if (!match) {
         console.error(`No clone found: '${cloneArg}'`);
-        console.error("Run 'ikagent list' to see available environments");
+        console.error("Run 'janix list' to see available environments");
         process.exit(1);
       }
       cloneName = match.name;
     } else {
       if (clones.length === 0) {
-        console.error("No clones found. Run 'ikagent create <branch>' first.");
+        console.error("No clones found. Run 'janix create <branch>' first.");
         process.exit(1);
       }
       cloneName = await selectClone(clones);

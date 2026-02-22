@@ -14,9 +14,9 @@ export const attachCommand = new Command("attach")
   .description("Attach to an existing dev environment")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {
-    // Verify we're in an ikagent project
+    // Verify we're in a janix project
     if (!findIkagentRoot()) {
-      console.error("Not in an ikagent project. Run 'ikagent init' first.");
+      console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
@@ -30,13 +30,13 @@ export const attachCommand = new Command("attach")
       const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
       if (!match) {
         console.error(`No clone found: '${cloneArg}'`);
-        console.error("Run 'ikagent list' to see available environments");
+        console.error("Run 'janix list' to see available environments");
         process.exit(1);
       }
       cloneName = match.name;
     } else {
       if (clones.length === 0) {
-        console.error("No clones found. Run 'ikagent create <branch>' first.");
+        console.error("No clones found. Run 'janix create <branch>' first.");
         process.exit(1);
       }
       cloneName = await selectClone(clones);
@@ -53,7 +53,7 @@ export const attachCommand = new Command("attach")
     const container = getContainer(project, clone.branch);
     if (!container) {
       console.error(`No container found for ${cloneName}`);
-      console.error("The container may have been removed. Run 'ikagent create' to recreate it.");
+      console.error("The container may have been removed. Run 'janix create' to recreate it.");
       process.exit(1);
     }
 

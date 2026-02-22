@@ -11,7 +11,7 @@ import { destroyCommand } from "./commands/destroy.js";
 const program = new Command();
 
 program
-  .name("ikagent")
+  .name("janix")
   .description("Docker dev environments for git branches with Claude Code support")
   .version("0.1.0");
 

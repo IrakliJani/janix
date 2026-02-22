@@ -1,4 +1,4 @@
-# ikagent
+# janix
 
 Docker dev environments for git branches with Claude Code support.
 
@@ -23,7 +23,7 @@ npm run check && npm run build && npm run docker:build
 ## Usage
 
 ```bash
-npm start -- init               # Initialize ikagent in current repo
+npm start -- init               # Initialize janix in current repo
 npm start -- create [branch]    # Create dev environment
 npm start -- list               # List environments
 npm start -- attach [clone]     # Attach by clone/branch

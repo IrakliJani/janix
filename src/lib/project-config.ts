@@ -8,7 +8,7 @@ export interface ProjectConfig {
   packageManager: string;
   /** .env files to load in order (later overrides earlier) */
   envFiles: string[];
-  /** Env var overrides (values may contain $IKAGENT_BRANCH etc.) */
+  /** Env var overrides (values may contain $JANIX_BRANCH etc.) */
   envOverrides: Record<string, string>;
   /** Docker network to join (optional) */
   network: string | null;
@@ -31,7 +31,7 @@ const DEFAULT_CONFIG: ProjectConfig = {
 };
 
 /**
- * Load project config from .ikagent/config.json.
+ * Load project config from .janix/config.json.
  * Returns default config if file doesn't exist.
  */
 export function loadProjectConfig(): ProjectConfig {
@@ -60,7 +60,7 @@ export function loadProjectConfig(): ProjectConfig {
 }
 
 /**
- * Save project config to .ikagent/config.json.
+ * Save project config to .janix/config.json.
  */
 export function saveProjectConfig(config: ProjectConfig): void {
   const configPath = getConfigPath();
@@ -74,7 +74,7 @@ export function saveProjectConfig(config: ProjectConfig): void {
 }
 
 /**
- * Check if ikagent is initialized in current directory tree.
+ * Check if janix is initialized in current directory tree.
  */
 export function isInitialized(): boolean {
   return findIkagentRoot() !== null;

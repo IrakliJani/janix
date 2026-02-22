@@ -3,9 +3,9 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync }
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { config, containerName, getProjectImageName, IKAGENT_ROOT } from "./config.js";
+import { config, containerName, getProjectImageName, JANIX_ROOT } from "./config.js";
 
-const FLAKE_HASH_LABEL = "ikagent.flake.hash";
+const FLAKE_HASH_LABEL = "janix.flake.hash";
 
 export function computeFlakeHash(projectRoot: string): string {
   const hash = createHash("sha256");
@@ -39,7 +39,7 @@ export function getImageFlakeNix(project: string): string | null {
   });
   if (create.status !== 0) return null;
   const cid = create.stdout.trim();
-  const tmpPath = join(tmpdir(), `ikagent-flake-${Date.now()}.nix`);
+  const tmpPath = join(tmpdir(), `janix-flake-${Date.now()}.nix`);
   try {
     const cp = spawnSync("docker", ["cp", `${cid}:/flake/flake.nix`, tmpPath], { stdio: "pipe" });
     if (cp.status !== 0) return null;
@@ -54,7 +54,7 @@ export function getImageFlakeNix(project: string): string | null {
   }
 }
 
-export const CACHE_VOLUME = "ikagent-cache";
+export const CACHE_VOLUME = "janix-cache";
 export const CACHE_MOUNT_PATH = "/cache";
 
 /** Predefined cache configurations for package managers */
@@ -125,16 +125,13 @@ export function buildImage(project: string, projectRoot: string): void {
   const imageName = getProjectImageName(project);
 
   // Create temp build context with all necessary files
-  const buildContext = join(tmpdir(), `ikagent-build-${Date.now()}`);
+  const buildContext = join(tmpdir(), `janix-build-${Date.now()}`);
   mkdirSync(buildContext, { recursive: true });
 
   try {
-    // Copy files from ikagent repo
-    copyFileSync(
-      join(IKAGENT_ROOT, "Dockerfile.ikagent"),
-      join(buildContext, "Dockerfile.ikagent"),
-    );
-    copyFileSync(join(IKAGENT_ROOT, "nix.conf"), join(buildContext, "nix.conf"));
+    // Copy files from janix repo
+    copyFileSync(join(JANIX_ROOT, "Dockerfile.janix"), join(buildContext, "Dockerfile.janix"));
+    copyFileSync(join(JANIX_ROOT, "nix.conf"), join(buildContext, "nix.conf"));
 
     // Copy project's flake files
     copyFileSync(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));
@@ -154,7 +151,7 @@ export function buildImage(project: string, projectRoot: string): void {
         "--label",
         `${FLAKE_HASH_LABEL}=${flakeHash}`,
         "-f",
-        "Dockerfile.ikagent",
+        "Dockerfile.janix",
         ".",
       ],
       {
@@ -253,7 +250,7 @@ export function listContainers(): ContainerInfo[] {
 
     return output.split("\n").map((line) => {
       const [id, name, status] = line.split("\t");
-      // Parse project and branch from container name: ikagent-<project>-<branch>
+      // Parse project and branch from container name: janix-<project>-<branch>
       const parts = name?.replace(`${config.containerPrefix}-`, "").split("-") ?? [];
       const project = parts[0] ?? "";
       const branch = parts.slice(1).join("-");

@@ -18,9 +18,9 @@ export const destroyCommand = new Command("destroy")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .option("-f, --force", "Skip confirmation")
   .action(async (cloneArg: string | undefined, options: { force: boolean }) => {
-    // Verify we're in an ikagent project
+    // Verify we're in a janix project
     if (!findIkagentRoot()) {
-      console.error("Not in an ikagent project. Run 'ikagent init' first.");
+      console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
@@ -35,7 +35,7 @@ export const destroyCommand = new Command("destroy")
       const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
       if (!match) {
         console.error(`No clone found: '${cloneArg}'`);
-        console.error("Run 'ikagent list' to see available environments");
+        console.error("Run 'janix list' to see available environments");
         process.exit(1);
       }
       cloneName = match.name;
@@ -70,10 +70,10 @@ export const destroyCommand = new Command("destroy")
       console.log("Running teardown scripts...");
       try {
         runInitScripts(projectConfig.teardown, name, {
-          IKAGENT_BRANCH: clone.branch,
-          IKAGENT_PROJECT: project,
-          IKAGENT_BRANCH_SLUG: sanitizeBranchForId(clone.branch),
-          IKAGENT_BRANCH_SAFE: sanitizeBranchSafe(clone.branch),
+          JANIX_BRANCH: clone.branch,
+          JANIX_PROJECT: project,
+          JANIX_BRANCH_SLUG: sanitizeBranchForId(clone.branch),
+          JANIX_BRANCH_SAFE: sanitizeBranchSafe(clone.branch),
         });
       } catch {
         console.warn("Teardown scripts failed, continuing with destroy...");

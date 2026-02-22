@@ -12,9 +12,9 @@ export const listCommand = new Command("list")
   .alias("ls")
   .description("List dev environments for this project")
   .action(() => {
-    // Verify we're in an ikagent project
+    // Verify we're in a janix project
     if (!findIkagentRoot()) {
-      console.error("Not in an ikagent project. Run 'ikagent init' first.");
+      console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
@@ -29,7 +29,7 @@ export const listCommand = new Command("list")
 
     if (clones.length === 0 && containers.length === 0) {
       console.log("No dev environments found");
-      console.log(`\nRun 'ikagent create <branch>' to create one.`);
+      console.log(`\nRun 'janix create <branch>' to create one.`);
       return;
     }
 
