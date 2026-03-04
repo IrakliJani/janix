@@ -29,7 +29,7 @@ import {
 } from "../lib/docker.js";
 import { resolveIntegrations, type Credential } from "../integrations/index.js";
 import { branchExists, createBranch, createClone } from "../lib/git.js";
-import { runScriptsInDevShell, getCurrentBranch } from "../lib/init.js";
+import { runScriptsInDevShell, runScriptsOnHost, getCurrentBranch } from "../lib/init.js";
 import { selectBranch, confirm } from "../lib/interactive.js";
 import { loadProjectConfig } from "../lib/project-config.js";
 import { loadEnvFiles } from "../lib/env.js";
@@ -231,13 +231,19 @@ export const createCommand = new Command("create")
         }
       }
 
-      // Run all init scripts in a single dev shell invocation
-      const allInitScripts = [...getIntegrationInitCommands(integrations), ...projectConfig.init];
-      if (allInitScripts.length > 0) {
+      // Run integration init commands inside the container
+      const integrationInitCommands = getIntegrationInitCommands(integrations);
+      if (integrationInitCommands.length > 0) {
+        await runScriptsInDevShell(integrationInitCommands, name);
+      }
+
+      // Run user init scripts on the host
+      const initScripts = projectConfig.init.map(resolveTemplateVars);
+      if (initScripts.length > 0) {
         console.log(`\n${sep}`);
         console.log(`  Running init scripts`);
         console.log(sep);
-        await runScriptsInDevShell(allInitScripts, name, janixVars);
+        runScriptsOnHost(initScripts, projectRoot);
       }
 
       // Attach

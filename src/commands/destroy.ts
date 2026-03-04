@@ -3,12 +3,13 @@ import {
   containerName,
   findJanixRoot,
   getProjectName,
+  getProjectRoot,
   sanitizeBranchForId,
   sanitizeBranchSafe,
 } from "../lib/config.js";
 import { getContainer, removeContainer, assertDockerRunning } from "../lib/docker.js";
 import { listClones, removeClone } from "../lib/git.js";
-import { runScriptsInDevShell } from "../lib/init.js";
+import { runScriptsOnHost } from "../lib/init.js";
 import { selectClone, confirm } from "../lib/interactive.js";
 import { loadProjectConfig } from "../lib/project-config.js";
 
@@ -63,19 +64,22 @@ export const destroyCommand = new Command("destroy")
       }
     }
 
-    // Run teardown scripts before removing container
+    // Run teardown scripts on the host
     const projectConfig = loadProjectConfig();
+    const projectRoot = getProjectRoot();
     const container = getContainer(project, clone.branch);
-    if (container && projectConfig.teardown.length > 0) {
-      const name = containerName(project, clone.branch);
+    if (projectConfig.teardown.length > 0) {
+      const vars: Record<string, string> = {
+        JANIX_BRANCH: clone.branch,
+        JANIX_PROJECT: project,
+        JANIX_BRANCH_SLUG: sanitizeBranchForId(clone.branch),
+        JANIX_BRANCH_SAFE: sanitizeBranchSafe(clone.branch),
+      };
+      const resolveVars = (s: string): string =>
+        s.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, name) => vars[name] ?? `$${name}`);
       console.log("Running teardown scripts...");
       try {
-        await runScriptsInDevShell(projectConfig.teardown, name, {
-          JANIX_BRANCH: clone.branch,
-          JANIX_PROJECT: project,
-          JANIX_BRANCH_SLUG: sanitizeBranchForId(clone.branch),
-          JANIX_BRANCH_SAFE: sanitizeBranchSafe(clone.branch),
-        });
+        runScriptsOnHost(projectConfig.teardown.map(resolveVars), projectRoot);
       } catch {
         console.warn("Teardown scripts failed, continuing with destroy...");
       }

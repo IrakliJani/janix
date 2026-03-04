@@ -1,4 +1,4 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.js";
@@ -44,6 +44,18 @@ export function runScriptsInDevShell(
       }
     });
   });
+}
+
+/**
+ * Run scripts on the host machine.
+ */
+export function runScriptsOnHost(scripts: string[], cwd: string): void {
+  for (const script of scripts) {
+    const result = spawnSync(script, { cwd, stdio: "inherit", shell: true });
+    if (result.status !== 0) {
+      throw new Error(`Script failed: ${script}`);
+    }
+  }
 }
 
 /**
