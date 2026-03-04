@@ -11,7 +11,8 @@
       "WebSearch",
       "WebFetch(domain:gist.github.com)",
       "WebFetch(domain:claudelog.com)",
-      "Bash(npm run check:*)"
+      "Bash(npm run check:*)",
+      "Bash(npm version:*)"
     ]
   },
   "outputStyle": "default"
