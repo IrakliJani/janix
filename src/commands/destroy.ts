@@ -8,7 +8,7 @@ import {
 } from "../lib/config.js";
 import { getContainer, removeContainer, assertDockerRunning } from "../lib/docker.js";
 import { listClones, removeClone } from "../lib/git.js";
-import { runInitScripts } from "../lib/init.js";
+import { runScriptsInDevShell } from "../lib/init.js";
 import { selectClone, confirm } from "../lib/interactive.js";
 import { loadProjectConfig } from "../lib/project-config.js";
 
@@ -17,7 +17,8 @@ export const destroyCommand = new Command("destroy")
   .description("Destroy a dev environment (removes clone and container)")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .option("-f, --force", "Skip confirmation")
-  .action(async (cloneArg: string | undefined, options: { force: boolean }) => {
+  .option("-y, --yes", "Skip confirmation")
+  .action(async (cloneArg: string | undefined, options: { force: boolean; yes: boolean }) => {
     // Verify we're in a janix project
     if (!findJanixRoot()) {
       console.error("Not in a janix project. Run 'janix init' first.");
@@ -54,7 +55,7 @@ export const destroyCommand = new Command("destroy")
       process.exit(1);
     }
 
-    if (!options.force) {
+    if (!options.force && !options.yes) {
       const confirmed = await confirm(`Destroy ${cloneName} (clone and container)?`);
       if (!confirmed) {
         console.log("Cancelled");
@@ -69,7 +70,7 @@ export const destroyCommand = new Command("destroy")
       const name = containerName(project, clone.branch);
       console.log("Running teardown scripts...");
       try {
-        runInitScripts(projectConfig.teardown, name, {
+        await runScriptsInDevShell(projectConfig.teardown, name, {
           JANIX_BRANCH: clone.branch,
           JANIX_PROJECT: project,
           JANIX_BRANCH_SLUG: sanitizeBranchForId(clone.branch),

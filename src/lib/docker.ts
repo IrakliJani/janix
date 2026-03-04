@@ -1,11 +1,25 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { config, containerName, getProjectImageName, JANIX_SUPPORT } from "./config.js";
+import { config, containerName, getProjectImageName } from "./config.js";
+import { resolveIntegrations, type Integration } from "../integrations/index.js";
+import { HOME_NIX, DOCKERFILE_TEMPLATE, generateIntegrationsNix, getNixConfigs } from "./nix.js";
 
 const FLAKE_HASH_LABEL = "janix.flake.hash";
+const INTEGRATION_LABEL = "janix.integrations";
+
+const CACHE_VOLUME = "janix-cache";
+const CACHE_PATH = "/root/.cache";
 
 export function computeFlakeHash(projectRoot: string): string {
   const hash = createHash("sha256");
@@ -32,7 +46,6 @@ export function getImageFlakeHash(project: string): string | null {
 
 export function getImageFlakeNix(project: string): string | null {
   const imageName = getProjectImageName(project);
-  // Create a stopped container, copy the file out, then remove it (faster than docker run)
   const create = spawnSync("docker", ["create", imageName], {
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -54,38 +67,66 @@ export function getImageFlakeNix(project: string): string | null {
   }
 }
 
-export const CACHE_VOLUME = "janix-cache";
-export const CACHE_MOUNT_PATH = "/cache";
-
-/** Predefined cache configurations for package managers */
-export const CACHE_CONFIGS = {
-  pnpm: {
-    env: {},
-    init: ["mkdir -p /cache/pnpm/store", "pnpm config set store-dir /cache/pnpm/store"],
-  },
-  bun: {
-    env: { BUN_INSTALL_CACHE_DIR: `${CACHE_MOUNT_PATH}/bun` },
-    init: ["mkdir -p /cache/bun"],
-  },
-  npm: {
-    env: { npm_config_cache: `${CACHE_MOUNT_PATH}/npm` },
-    init: ["mkdir -p /cache/npm"],
-  },
-  yarn: {
-    env: { YARN_CACHE_FOLDER: `${CACHE_MOUNT_PATH}/yarn` },
-    init: ["mkdir -p /cache/yarn"],
-  },
-} as const;
-
-export type CacheType = keyof typeof CACHE_CONFIGS;
-
-/** Get init commands for selected caches */
-export function getCacheInitCommands(caches: CacheType[]): string[] {
-  const commands: string[] = [];
-  for (const cache of caches) {
-    commands.push(...CACHE_CONFIGS[cache].init);
+export function getImageIntegrations(project: string): string | null {
+  const imageName = getProjectImageName(project);
+  try {
+    const out = runDocker([
+      "inspect",
+      "--format",
+      `{{index .Config.Labels "${INTEGRATION_LABEL}"}}`,
+      imageName,
+    ]);
+    return out || null;
+  } catch {
+    return null;
   }
-  return commands;
+}
+
+export function generateDockerfile(integrations: Integration[]): string {
+  const lines = integrations.flatMap((i) => i.dockerfileLines).join("\n");
+  return DOCKERFILE_TEMPLATE.replace("{{INTEGRATION_LINES}}", lines || "");
+}
+
+export function getIntegrationInitCommands(ids: string[]): string[] {
+  return resolveIntegrations(ids).flatMap((i) => i.initCommands);
+}
+
+export function getIntegrationVolumes(ids: string[]): { name: string; path: string }[] {
+  return resolveIntegrations(ids).flatMap((i) => i.volumes);
+}
+
+export function getIntegrationEnv(ids: string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const integration of resolveIntegrations(ids)) {
+    Object.assign(env, integration.env);
+  }
+  return env;
+}
+
+export function copyCredentialToContainer(
+  container: string,
+  content: string,
+  containerPath: string,
+): void {
+  const parentDir = dirname(containerPath);
+  spawnSync("docker", ["exec", container, "mkdir", "-p", parentDir], { stdio: "pipe" });
+
+  const tmpPath = join(tmpdir(), `janix-cred-${Date.now()}`);
+  writeFileSync(tmpPath, content, { mode: 0o600 });
+  try {
+    const result = spawnSync("docker", ["cp", tmpPath, `${container}:${containerPath}`], {
+      stdio: "pipe",
+    });
+    if (result.status !== 0) {
+      throw new Error(`Failed to copy credential to ${containerPath}`);
+    }
+  } finally {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export interface ContainerInfo {
@@ -121,17 +162,23 @@ export function assertDockerRunning(): void {
   }
 }
 
-export function buildImage(project: string, projectRoot: string): void {
+export function buildImage(project: string, projectRoot: string, integrations: string[]): void {
   const imageName = getProjectImageName(project);
+  const resolved = resolveIntegrations(integrations);
+  const dockerfile = generateDockerfile(resolved);
 
-  // Create temp build context with all necessary files
   const buildContext = join(tmpdir(), `janix-build-${Date.now()}`);
   mkdirSync(buildContext, { recursive: true });
 
   try {
-    // Copy files from janix repo
-    copyFileSync(join(JANIX_SUPPORT, "Dockerfile.janix"), join(buildContext, "Dockerfile.janix"));
-    copyFileSync(join(JANIX_SUPPORT, "nix.conf"), join(buildContext, "nix.conf"));
+    // Write generated Dockerfile, home.nix, and integrations.nix
+    writeFileSync(join(buildContext, "Dockerfile"), dockerfile);
+    writeFileSync(join(buildContext, "home.nix"), HOME_NIX);
+    const nixConfigs = getNixConfigs(resolved);
+    writeFileSync(
+      join(buildContext, "integrations.nix"),
+      generateIntegrationsNix(integrations, nixConfigs),
+    );
 
     // Copy project's flake files
     copyFileSync(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));
@@ -150,8 +197,10 @@ export function buildImage(project: string, projectRoot: string): void {
         imageName,
         "--label",
         `${FLAKE_HASH_LABEL}=${flakeHash}`,
+        "--label",
+        `${INTEGRATION_LABEL}=${integrations.join(",")}`,
         "-f",
-        "Dockerfile.janix",
+        "Dockerfile",
         ".",
       ],
       {
@@ -164,7 +213,6 @@ export function buildImage(project: string, projectRoot: string): void {
       throw new Error(`Docker build failed with exit code ${result.status}`);
     }
   } finally {
-    // Clean up temp directory
     rmSync(buildContext, { recursive: true, force: true });
   }
 }
@@ -173,8 +221,9 @@ export interface CreateContainerOptions {
   project: string;
   branch: string;
   clonePath: string;
+  projectRoot: string;
   network?: string | null;
-  caches?: CacheType[];
+  integrations?: string[];
   env?: Record<string, string>;
 }
 
@@ -187,10 +236,10 @@ export function ensureVolumeExists(volumeName: string): void {
 }
 
 export function createContainer(options: CreateContainerOptions): string {
-  const { project, branch, clonePath, network, caches = [], env = {} } = options;
+  const { project, branch, clonePath, projectRoot, network, integrations = [], env = {} } = options;
   const name = containerName(project, branch);
 
-  // Always mount cache volume — nix uses it for download cache (XDG_CACHE_HOME)
+  // Always mount the shared cache volume
   ensureVolumeExists(CACHE_VOLUME);
 
   const args = [
@@ -201,25 +250,30 @@ export function createContainer(options: CreateContainerOptions): string {
     "-v",
     `${clonePath}:${config.containerWorkspace}`,
     "-v",
-    `${config.claudeConfigDir}:${config.containerClaudeConfig}:ro`,
+    `${projectRoot}/.git:${projectRoot}/.git`,
     "-v",
-    `${CACHE_VOLUME}:${CACHE_MOUNT_PATH}`,
+    `${CACHE_VOLUME}:${CACHE_PATH}`,
     "-e",
-    `XDG_CACHE_HOME=${CACHE_MOUNT_PATH}`,
+    `XDG_CACHE_HOME=${CACHE_PATH}`,
     "-w",
     config.containerWorkspace,
     "--add-host=host.docker.internal:host-gateway",
   ];
 
-  // Add PM-specific env vars
-  for (const cache of caches) {
-    const cacheConfig = CACHE_CONFIGS[cache];
-    for (const [key, value] of Object.entries(cacheConfig.env)) {
-      args.push("-e", `${key}=${value}`);
-    }
+  // Mount integration volumes
+  const integrationVolumes = getIntegrationVolumes(integrations);
+  for (const vol of integrationVolumes) {
+    ensureVolumeExists(vol.name);
+    args.push("-v", `${vol.name}:${vol.path}`);
   }
 
-  // Add env vars
+  // Add integration env vars
+  const integrationEnv = getIntegrationEnv(integrations);
+  for (const [key, value] of Object.entries(integrationEnv)) {
+    args.push("-e", `${key}=${value}`);
+  }
+
+  // Add user env vars
   for (const [key, value] of Object.entries(env)) {
     args.push("-e", `${key}=${value}`);
   }
@@ -250,7 +304,6 @@ export function listContainers(): ContainerInfo[] {
 
     return output.split("\n").map((line) => {
       const [id, name, status] = line.split("\t");
-      // Parse project and branch from container name: janix-<project>-<branch>
       const parts = name?.replace(`${config.containerPrefix}-`, "").split("-") ?? [];
       const project = parts[0] ?? "";
       const branch = parts.slice(1).join("-");
@@ -322,9 +375,6 @@ export function isContainerRunning(name: string): boolean {
   return result.status === 0 && result.stdout.trim() === "true";
 }
 
-/**
- * List available Docker networks.
- */
 export function listNetworks(): string[] {
   try {
     const output = runDocker(["network", "ls", "--format", "{{.Name}}"]);

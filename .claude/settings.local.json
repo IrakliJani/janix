@@ -5,7 +5,13 @@
       "Bash(npm run lint)",
       "Bash(npm run typecheck:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run docker:build:*)"
+      "Bash(npm run docker:build:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:claudelog.com)",
+      "Bash(npm run check:*)"
     ]
   },
   "outputStyle": "default"

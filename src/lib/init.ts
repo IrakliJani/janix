@@ -1,25 +1,23 @@
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.js";
 
 /**
- * Run init scripts in the container.
+ * Run scripts in the container inside nix develop (for access to flake devShell packages).
  */
-export function runInitScripts(
+export function runScriptsInDevShell(
   scripts: string[],
   containerName: string,
   env: Record<string, string> = {},
-): void {
+): Promise<void> {
+  if (scripts.length === 0) return Promise.resolve();
+
   const envArgs = Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  const batchScript = `set -e\n${scripts.join("\n")}`;
 
-  for (const script of scripts) {
-    console.log(`Running ${script}...`);
-
-    // Run via nix develop so devShell packages (psql, node, etc.) are available.
-    // For .sh files, explicitly invoke bash to avoid shebang interpreter issues in nix containers.
-    const cmd = /\S+\.sh(\s|$)/.test(script) ? `bash ${script}` : script;
-    const result = spawnSync(
+  return new Promise((resolve, reject) => {
+    const child = spawn(
       "docker",
       [
         "exec",
@@ -33,16 +31,19 @@ export function runInitScripts(
         "--command",
         "bash",
         "-c",
-        cmd,
+        batchScript,
       ],
       { stdio: "inherit" },
     );
 
-    if (result.status !== 0) {
-      console.error(`Script ${script} failed with exit code ${result.status}`);
-      throw new Error(`Init script failed: ${script}`);
-    }
-  }
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Scripts failed with exit code ${code}`));
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 /**

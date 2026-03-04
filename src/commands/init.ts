@@ -1,10 +1,11 @@
 import { Command } from "commander";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
+import { checkbox } from "@inquirer/prompts";
 import { JANIX_DIR, CLONES_DIR, sanitizeBranchForId, sanitizeBranchSafe } from "../lib/config.js";
 import { isGitRepo, addToGitignore, getCurrentBranch } from "../lib/init.js";
 import { saveProjectConfig, type ProjectConfig } from "../lib/project-config.js";
-import { type CacheType } from "../lib/docker.js";
+import { getSelectableIntegrations, detectIntegrations } from "../integrations/index.js";
 import {
   inputMultiLine,
   selectNetwork,
@@ -12,15 +13,6 @@ import {
   selectEnvOverrides,
 } from "../lib/interactive.js";
 import { loadEnvFiles } from "../lib/env.js";
-
-function detectPackageManager(cwd: string): { pm: string; cache: CacheType } | null {
-  if (existsSync(join(cwd, "pnpm-lock.yaml"))) return { pm: "pnpm", cache: "pnpm" };
-  if (existsSync(join(cwd, "bun.lockb")) || existsSync(join(cwd, "bun.lock")))
-    return { pm: "bun", cache: "bun" };
-  if (existsSync(join(cwd, "yarn.lock"))) return { pm: "yarn", cache: "yarn" };
-  if (existsSync(join(cwd, "package-lock.json"))) return { pm: "npm", cache: "npm" };
-  return null;
-}
 
 export const initCommand = new Command("init")
   .description("Initialize janix in current git repository")
@@ -44,17 +36,18 @@ export const initCommand = new Command("init")
     const projectName = basename(cwd);
     const currentBranch = getCurrentBranch(cwd);
     const varHint = [
-      `  ✓ $JANIX_PROJECT=${projectName}`,
-      `  ✓ $JANIX_BRANCH=${currentBranch}`,
-      `  ✓ $JANIX_BRANCH_SLUG=${sanitizeBranchForId(currentBranch)}`,
-      `  ✓ $JANIX_BRANCH_SAFE=${sanitizeBranchSafe(currentBranch)}`,
+      `  \u2713 $JANIX_PROJECT=${projectName}`,
+      `  \u2713 $JANIX_BRANCH=${currentBranch}`,
+      `  \u2713 $JANIX_BRANCH_SLUG=${sanitizeBranchForId(currentBranch)}`,
+      `  \u2713 $JANIX_BRANCH_SAFE=${sanitizeBranchSafe(currentBranch)}`,
     ].join("\n");
     const janixDir = join(cwd, JANIX_DIR);
 
-    // Check if already initialized
-    if (existsSync(janixDir)) {
+    // Check if already initialized (directory + config file must both exist)
+    const configFile = join(janixDir, "config.json");
+    if (existsSync(janixDir) && existsSync(configFile)) {
       console.log(`janix already initialized in ${projectName}`);
-      console.log(`Config at: ${janixDir}/config.json`);
+      console.log(`Config at: ${configFile}`);
       return;
     }
 
@@ -62,21 +55,33 @@ export const initCommand = new Command("init")
 
     // Create .janix directory
     mkdirSync(janixDir, { recursive: true });
-    console.log(`✓ Created ${JANIX_DIR}/`);
+    console.log(`\u2713 Created ${JANIX_DIR}/`);
 
     // Create clones directory
     const clonesDir = join(janixDir, CLONES_DIR);
     mkdirSync(clonesDir, { recursive: true });
 
-    console.log("✓ Detected flake.nix");
+    console.log("\u2713 Detected flake.nix");
 
-    // Auto-detect package manager from lock files
-    let caches: CacheType[] = [];
-    const detected = detectPackageManager(cwd);
-    if (detected) {
-      caches = [detected.cache];
-      console.log(`✓ Detected ${detected.pm} (cache: ${detected.cache})`);
+    // Auto-detect package manager integrations
+    const detectedPMs = detectIntegrations(cwd);
+    for (const pm of detectedPMs) {
+      console.log(`\u2713 Detected ${pm.label}`);
     }
+
+    // Prompt for selectable integrations (agents + shell-tools)
+    const selectable = getSelectableIntegrations();
+    const selectedIntegrations = await checkbox({
+      message: "Select integrations:",
+      choices: selectable.map((i) => ({
+        name: i.label,
+        value: i.id,
+        checked: i.defaultSelected,
+      })),
+    });
+
+    // Merge detected PMs + user-selected integrations
+    const integrations = [...selectedIntegrations, ...detectedPMs.map((pm) => pm.id)];
 
     // Find available .env files
     const envFiles = readdirSync(cwd).filter(
@@ -113,21 +118,20 @@ export const initCommand = new Command("init")
 
     // Save config
     const config: ProjectConfig = {
-      packageManager: detected?.pm ?? "npm",
+      integrations,
       envFiles: selectedEnvFiles,
       envOverrides,
       network,
-      caches,
       init: initScripts,
       teardown: teardownScripts,
     };
     saveProjectConfig(config);
-    console.log(`\n✓ Saved ${JANIX_DIR}/config.json`);
+    console.log(`\n\u2713 Saved ${JANIX_DIR}/config.json`);
 
     // Add clones to gitignore
     const gitignoreLine = `${JANIX_DIR}/${CLONES_DIR}/`;
     if (addToGitignore(cwd, gitignoreLine)) {
-      console.log(`✓ Added ${gitignoreLine} to .gitignore`);
+      console.log(`\u2713 Added ${gitignoreLine} to .gitignore`);
     }
 
     console.log(`\nReady! Run 'janix create <branch>' to create a dev environment.`);

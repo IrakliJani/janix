@@ -125,19 +125,6 @@ export function createClone(branch: string): string {
   // Clone from local repo (fast, uses hardlinks)
   runGit(["clone", repoPath, clonePath], clonesDir);
 
-  // Get the real remote URL to fetch branches that only exist upstream
-  let remoteUrl: string | null = null;
-  try {
-    remoteUrl = runGit(["remote", "get-url", "origin"], repoPath);
-  } catch {
-    // Source repo has no origin remote
-  }
-
-  // Add real remote as "upstream" for fetching remote-only branches
-  if (remoteUrl) {
-    runGit(["remote", "add", "upstream", remoteUrl], clonePath);
-  }
-
   // Try to checkout the branch
   // First check if it exists as a local branch (e.g., default branch)
   if (refExists(clonePath, `refs/heads/${branch}`)) {
@@ -145,24 +132,19 @@ export function createClone(branch: string): string {
     return clonePath;
   }
 
-  // Check if it exists in origin (local repo's branches)
+  // Check if it exists in origin (the host repo)
   if (refExists(clonePath, `refs/remotes/origin/${branch}`)) {
     runGit(["checkout", "-b", branch, `origin/${branch}`, "--no-track"], clonePath);
     return clonePath;
   }
 
-  // Branch not in local clone - fetch only this branch from upstream
-  if (remoteUrl) {
-    try {
-      // Fetch the specific branch from upstream
-      runGit(["fetch", "upstream", branch], clonePath);
-      // Checkout from FETCH_HEAD
-      runGit(["checkout", "-b", branch, "FETCH_HEAD", "--no-track"], clonePath);
-      return clonePath;
-    } catch (e) {
-      // Branch doesn't exist upstream either, show error for debugging
-      console.error(`Failed to fetch branch '${branch}' from upstream:`, e);
-    }
+  // Fetch from origin in case it has new branches
+  try {
+    runGit(["fetch", "origin", branch], clonePath);
+    runGit(["checkout", "-b", branch, "FETCH_HEAD", "--no-track"], clonePath);
+    return clonePath;
+  } catch {
+    // Branch doesn't exist
   }
 
   throw new Error(`Could not checkout branch '${branch}' in clone`);

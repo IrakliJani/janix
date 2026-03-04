@@ -1,11 +1,10 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { getConfigPath, findJanixRoot } from "./config.js";
-import { type CacheType } from "./docker.js";
 
 export interface ProjectConfig {
-  /** Package manager */
-  packageManager: string;
+  /** Active integration IDs (e.g. ["claude", "starship", "pnpm"]) */
+  integrations: string[];
   /** .env files to load in order (later overrides earlier) */
   envFiles: string[];
   /** Env var overrides (values may contain $JANIX_BRANCH etc.) */
@@ -16,23 +15,26 @@ export interface ProjectConfig {
   init: string[];
   /** Teardown scripts to run before destroying the environment */
   teardown: string[];
-  /** Package manager caches to mount (pnpm, bun, npm, yarn) */
-  caches: CacheType[];
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
-  packageManager: "npm",
+  integrations: [],
   envFiles: [],
   envOverrides: {},
   network: null,
   init: [],
   teardown: [],
-  caches: [],
 };
+
+interface LegacyConfig {
+  caches?: string[];
+  packageManager?: string;
+}
 
 /**
  * Load project config from .janix/config.json.
  * Returns default config if file doesn't exist.
+ * Migrates legacy caches/packageManager fields to integrations.
  */
 export function loadProjectConfig(): ProjectConfig {
   const configPath = getConfigPath();
@@ -43,15 +45,21 @@ export function loadProjectConfig(): ProjectConfig {
 
   try {
     const content = readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(content) as Partial<ProjectConfig>;
+    const parsed = JSON.parse(content) as Partial<ProjectConfig> & LegacyConfig;
+
+    // Backward compat: migrate legacy caches field to integrations
+    let integrations = parsed.integrations;
+    if (!integrations && parsed.caches) {
+      integrations = [...parsed.caches, "claude", "starship"];
+    }
+
     return {
-      packageManager: parsed.packageManager ?? DEFAULT_CONFIG.packageManager,
+      integrations: integrations ?? DEFAULT_CONFIG.integrations,
       envFiles: parsed.envFiles ?? DEFAULT_CONFIG.envFiles,
       envOverrides: parsed.envOverrides ?? DEFAULT_CONFIG.envOverrides,
       network: parsed.network ?? DEFAULT_CONFIG.network,
       init: parsed.init ?? DEFAULT_CONFIG.init,
       teardown: parsed.teardown ?? DEFAULT_CONFIG.teardown,
-      caches: parsed.caches ?? DEFAULT_CONFIG.caches,
     };
   } catch {
     console.warn(`Warning: Could not parse ${configPath}, using defaults`);
