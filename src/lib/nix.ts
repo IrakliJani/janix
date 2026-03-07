@@ -16,6 +16,7 @@ function escapeNixString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$\{/g, "\\${");
 }
 
+// TODO: this is unreadable as fuck, is there a json to nix object converter? :D
 export function generateIntegrationsNix(
   ids: string[],
   nixConfigs: { id: string; config: Record<string, string> }[],

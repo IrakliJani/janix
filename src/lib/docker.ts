@@ -44,6 +44,7 @@ export function getImageFlakeHash(project: string): string | null {
   }
 }
 
+// TODO: this is not optimal, I would expect it to actually use the prebuilt image to diff with the existing one...
 export function getImageFlakeNix(project: string): string | null {
   const imageName = getProjectImageName(project);
   const create = spawnSync("docker", ["create", imageName], {
@@ -167,7 +168,10 @@ export function buildImage(project: string, projectRoot: string, integrations: s
   const resolved = resolveIntegrations(integrations);
   const dockerfile = generateDockerfile(resolved);
 
+  // TODO: how does files in temp dir last?
+  // TODO: second question, can we use those files to actually diff dockerfile and home.nix if they changed at all? we can do so by adding timestamp or unique hash label to a docker images we build?
   const buildContext = join(tmpdir(), `janix-build-${Date.now()}`);
+  // TODO: I see that you are using a lot of sync functions. cant we use async counterparts? same goes with everything else, like writing files etc...
   mkdirSync(buildContext, { recursive: true });
 
   try {
@@ -196,6 +200,8 @@ export function buildImage(project: string, projectRoot: string, integrations: s
         "-t",
         imageName,
         "--label",
+        // TODO: oh you already use labels for flake hash you can do the same for integrations and for dockerfile hash?
+        // TODO: that way diffing will be much easier
         `${FLAKE_HASH_LABEL}=${flakeHash}`,
         "--label",
         `${INTEGRATION_LABEL}=${integrations.join(",")}`,
@@ -289,6 +295,7 @@ export function createContainer(options: CreateContainerOptions): string {
   return runDocker(args);
 }
 
+// TODO: this list is ugly, basic and lame, maybe also offer to attach to the container? but also show all the statuses that you show RN.
 export function listContainers(): ContainerInfo[] {
   try {
     const output = runDocker([
