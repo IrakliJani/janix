@@ -12,7 +12,8 @@
       "WebFetch(domain:gist.github.com)",
       "WebFetch(domain:claudelog.com)",
       "Bash(npm run check:*)",
-      "Bash(npm version:*)"
+      "Bash(npm version:*)",
+      "Bash(git status:*)"
     ]
   },
   "outputStyle": "default"

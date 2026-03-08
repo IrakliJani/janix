@@ -2,6 +2,7 @@ export interface Credential {
   label: string;
   resolve: () => string | null;
   containerPath: string;
+  requiresConsent?: boolean;
 }
 
 interface BaseIntegration {

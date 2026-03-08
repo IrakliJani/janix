@@ -1,6 +1,6 @@
 {
   "name": "janix",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Isolated Docker + Nix dev environments per git branch",
   "type": "module",
   "bin": {

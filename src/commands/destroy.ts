@@ -4,8 +4,8 @@ import * as Docker from "../lib/docker.js";
 import * as Git from "../lib/git.js";
 import * as Init from "../lib/init.js";
 import * as Interactive from "../lib/interactive.js";
-// TODO: maybe call this file janix config?
 import * as ProjectConfig from "../lib/project-config.js";
+import { buildJanixVars, resolveVars } from "../lib/vars.js";
 
 export const destroyCommand = new Command("destroy")
   .alias("rm")
@@ -63,18 +63,13 @@ export const destroyCommand = new Command("destroy")
     const projectRoot = Config.getProjectRoot();
     const container = Docker.getContainer(project, clone.branch);
     if (projectConfig.teardown.length > 0) {
-      // TODO: I see this repeated in create.ts file as well, can't we just put it in a nice file somewhere? thanks. kisses.
-      const vars: Record<string, string> = {
-        JANIX_BRANCH: clone.branch,
-        JANIX_PROJECT: project,
-        JANIX_BRANCH_SLUG: Config.sanitizeBranchForId(clone.branch),
-        JANIX_BRANCH_SAFE: Config.sanitizeBranchSafe(clone.branch),
-      };
-      const resolveVars = (s: string): string =>
-        s.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, name) => vars[name] ?? `$${name}`);
+      const vars = buildJanixVars(project, clone.branch);
       console.log("Running teardown scripts...");
       try {
-        Init.runScriptsOnHost(projectConfig.teardown.map(resolveVars), projectRoot);
+        Init.runScriptsOnHost(
+          projectConfig.teardown.map((s) => resolveVars(s, vars)),
+          projectRoot,
+        );
       } catch {
         console.warn("Teardown scripts failed, continuing with destroy...");
       }

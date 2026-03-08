@@ -30,6 +30,7 @@ export const pi: SelectableIntegration = {
       label: "Pi agent credentials",
       resolve: resolveCredentials,
       containerPath: "/root/.pi/agent/auth.json",
+      requiresConsent: true,
     },
     {
       label: "Pi agent settings",

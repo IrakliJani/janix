@@ -58,6 +58,7 @@ export const claude: SelectableIntegration = {
       label: "Claude Code credentials",
       resolve: resolveCredentials,
       containerPath: "/root/.claude/.credentials.json",
+      requiresConsent: true,
     },
     {
       label: "Claude Code settings",

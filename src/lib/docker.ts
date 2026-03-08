@@ -16,6 +16,7 @@ import { resolveIntegrations, type Integration } from "../integrations/index.js"
 import { HOME_NIX, DOCKERFILE_TEMPLATE, generateIntegrationsNix, getNixConfigs } from "./nix.js";
 
 const FLAKE_HASH_LABEL = "janix.flake.hash";
+const DOCKERFILE_HASH_LABEL = "janix.dockerfile.hash";
 const INTEGRATION_LABEL = "janix.integrations";
 
 const CACHE_VOLUME = "janix-cache";
@@ -81,6 +82,34 @@ export function getImageIntegrations(project: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function computeDockerfileHash(integrations: Integration[]): string {
+  const dockerfile = generateDockerfile(integrations);
+  return createHash("sha256").update(dockerfile).digest("hex").slice(0, 16);
+}
+
+export function getImageDockerfileHash(project: string): string | null {
+  const imageName = getProjectImageName(project);
+  try {
+    const out = runDocker([
+      "inspect",
+      "--format",
+      `{{index .Config.Labels "${DOCKERFILE_HASH_LABEL}"}}`,
+      imageName,
+    ]);
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+export function dockerfileChanged(project: string, integrations: string[]): boolean {
+  const imageHash = getImageDockerfileHash(project);
+  if (!imageHash) return true;
+  const resolved = resolveIntegrations(integrations);
+  const currentHash = computeDockerfileHash(resolved);
+  return imageHash !== currentHash;
 }
 
 export function generateDockerfile(integrations: Integration[]): string {
@@ -192,6 +221,7 @@ export function buildImage(project: string, projectRoot: string, integrations: s
     }
 
     const flakeHash = computeFlakeHash(projectRoot);
+    const dockerfileHash = computeDockerfileHash(resolved);
 
     const result = spawnSync(
       "docker",
@@ -200,9 +230,9 @@ export function buildImage(project: string, projectRoot: string, integrations: s
         "-t",
         imageName,
         "--label",
-        // TODO: oh you already use labels for flake hash you can do the same for integrations and for dockerfile hash?
-        // TODO: that way diffing will be much easier
         `${FLAKE_HASH_LABEL}=${flakeHash}`,
+        "--label",
+        `${DOCKERFILE_HASH_LABEL}=${dockerfileHash}`,
         "--label",
         `${INTEGRATION_LABEL}=${integrations.join(",")}`,
         "-f",

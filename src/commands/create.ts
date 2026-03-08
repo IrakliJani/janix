@@ -1,7 +1,4 @@
-import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
 import { Command } from "commander";
 import * as Config from "../lib/config.js";
 import * as Docker from "../lib/docker.js";
@@ -11,6 +8,8 @@ import * as Init from "../lib/init.js";
 import * as Interactive from "../lib/interactive.js";
 import * as ProjectConfig from "../lib/project-config.js";
 import * as Env from "../lib/env.js";
+import { buildJanixVars, resolveVars } from "../lib/vars.js";
+import { section, showFileDiff } from "../lib/ui.js";
 
 async function promptFlakeRebuild(
   project: string,
@@ -21,35 +20,16 @@ async function promptFlakeRebuild(
   const imageHash = Docker.getImageFlakeHash(project);
   if (!imageHash || imageHash === currentHash) return false;
 
-  // TODO: this is wrong, it does not mean the image should rebuild (only if something changed then it needs to rebuild)
-  if (autoYes) return true;
-
   const oldContent = Docker.getImageFlakeNix(project);
   if (oldContent) {
-    const oldTmp = join(tmpdir(), `janix-flake-old-${Date.now()}.nix`);
-    try {
-      writeFileSync(oldTmp, oldContent);
-      console.log("\nflake.nix has changed since the image was built:\n");
-      // TODO: maybe put this in diff lib ?
-      spawnSync(
-        "git",
-        ["diff", "--no-index", "--color=always", oldTmp, join(projectRoot, "flake.nix")],
-        {
-          stdio: "inherit",
-        },
-      );
-    } finally {
-      try {
-        unlinkSync(oldTmp);
-      } catch {
-        /* ignore */
-      }
-    }
+    console.log("\nflake.nix has changed since the image was built:\n");
+    showFileDiff(oldContent, join(projectRoot, "flake.nix"));
   } else {
     console.log("\nflake.nix has changed since the image was built.");
   }
 
-  // TODO: we can use auto yes here instead.
+  if (autoYes) return true;
+
   return Interactive.confirm("Rebuild Docker image?");
 }
 
@@ -79,7 +59,6 @@ export const createCommand = new Command("create")
         process.exit(1);
       }
 
-      // TODO: this should print a helpful error
       Docker.assertDockerRunning();
 
       const project = Config.getProjectName();
@@ -120,16 +99,8 @@ export const createCommand = new Command("create")
       const projectConfig = ProjectConfig.loadProjectConfig();
       const { integrations } = projectConfig;
 
-      // Built-in template vars available in override values
-      const janixVars: Record<string, string> = {
-        JANIX_BRANCH: branch,
-        JANIX_PROJECT: project,
-        JANIX_BRANCH_SLUG: Config.sanitizeBranchForId(branch),
-        JANIX_BRANCH_SAFE: Config.sanitizeBranchSafe(branch),
-      };
-
-      const resolveTemplateVars = (value: string): string =>
-        value.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, name) => janixVars[name] ?? `$${name}`);
+      // Build template vars for env resolution
+      const vars = buildJanixVars(project, branch);
 
       // Load env files and apply stored overrides (with template var resolution)
       let env: Record<string, string> = {};
@@ -138,33 +109,26 @@ export const createCommand = new Command("create")
       }
       if (Object.keys(projectConfig.envOverrides).length > 0) {
         const resolvedOverrides = Object.fromEntries(
-          Object.entries(projectConfig.envOverrides).map(([k, v]) => [k, resolveTemplateVars(v)]),
+          Object.entries(projectConfig.envOverrides).map(([k, v]) => [k, resolveVars(v, vars)]),
         );
         env = { ...env, ...resolvedOverrides };
       }
-
-      // TODO: can be size of a terminal window (add a helper utility for this)"
-      const sep = "────────────────────────────────────";
 
       // Ensure Docker image exists (or rebuild if requested / integrations changed)
       const needsBuild =
         !Docker.imageExists(project) ||
         options.rebuild ||
         integrationsChanged(project, integrations) ||
+        Docker.dockerfileChanged(project, integrations) ||
         (await promptFlakeRebuild(project, projectRoot, options.yes));
-      // TODO: also... this should check if dockerfile changed
 
       if (needsBuild) {
-        console.log(`\n${sep}`);
-        console.log(`  Building image`);
-        console.log(sep);
+        section("Building image");
         Docker.buildImage(project, projectRoot, integrations);
       }
 
       // Create clone
-      console.log(`\n${sep}`);
-      console.log(`  Creating environment: ${project}/${branch}`);
-      console.log(sep);
+      section(`Creating environment: ${project}/${branch}`);
       const clonePath = Git.createClone(branch);
       console.log(`  Clone:       ${clonePath}`);
 
@@ -183,68 +147,94 @@ export const createCommand = new Command("create")
         console.log(`  Network:     ${projectConfig.network}`);
       }
 
-      // TODO: this tree is shit, needs refactor, I would like this to be flat and prettier. thanks.
-      // Resolve credentials and copy, displaying as a tree per integration
-      if (integrations.length > 0) {
-        console.log(`\n${sep}`);
-        console.log(`  Integrations`);
-        console.log(sep);
+      // Run user init scripts on the host (before integration init)
+      const initScripts = projectConfig.init.map((s) => resolveVars(s, vars));
+      if (initScripts.length > 0) {
+        section("Running init scripts");
+        Init.runScriptsOnHost(initScripts, projectRoot);
+      }
 
-        const resolved = Integrations.resolveIntegrations(integrations);
-        const lastIdx = resolved.length - 1;
-        for (const [i, integration] of resolved.entries()) {
-          const isLast = i === lastIdx;
-          const prefix = isLast ? "  └─ " : "  ├─ ";
-          const childPrefix = isLast ? "     " : "  │  ";
+      // From here, wrap in try/catch so teardown runs on failure
+      try {
+        // Resolve credentials and copy, displaying as a flat list
+        if (integrations.length > 0) {
+          section("Integrations");
 
-          const creds = integration.credentials
-            .map((c) => ({ credential: c, content: c.resolve() }))
-            .filter(
-              (c): c is { credential: Integrations.Credential; content: string } =>
-                c.content !== null,
-            );
+          const resolved = Integrations.resolveIntegrations(integrations);
+          let configChanged = false;
 
-          console.log(`${prefix}${integration.label}`);
-
-          const lastCredIdx = creds.length - 1;
-          for (const [j, { credential, content }] of creds.entries()) {
-            const credBranch = j === lastCredIdx ? "└─ " : "├─ ";
-
-            // TODO: if you consent about copying user credentials once, you should be good the next time so I assume that can be added to the janix config later on when you say yes to pi integration it will save that you said yes to pi integration credential copy and same goes with settings as well
-            const shouldCopy =
-              options.yes ||
-              (await Interactive.confirm(`${childPrefix}  Copy ${credential.label}?`));
-            if (shouldCopy) {
-              Docker.copyCredentialToContainer(name, content, credential.containerPath);
-              console.log(`${childPrefix}${credBranch}\u2713 ${credential.label}`);
-            } else {
-              console.log(`${childPrefix}${credBranch}\u2717 ${credential.label} (skipped)`);
+          // Collect all resolvable credentials for padding calculation
+          const allCreds: {
+            integration: Integrations.Integration;
+            credential: Integrations.Credential;
+            content: string;
+          }[] = [];
+          for (const integration of resolved) {
+            for (const credential of integration.credentials) {
+              const content = credential.resolve();
+              if (content !== null) {
+                allCreds.push({ integration, credential, content });
+              }
             }
           }
+
+          const maxLabelLen = Math.max(0, ...allCreds.map((c) => c.credential.label.length));
+
+          for (const { integration, credential, content } of allCreds) {
+            let shouldCopy: boolean;
+            if (!credential.requiresConsent || options.yes) {
+              shouldCopy = true;
+            } else {
+              // Check stored consent
+              const storedConsent = projectConfig.consents?.[integration.id]?.[credential.label];
+              if (storedConsent !== undefined) {
+                shouldCopy = storedConsent;
+              } else {
+                shouldCopy = await Interactive.confirm(`  Copy ${credential.label}?`);
+                // Persist consent
+                const integrationConsents = (projectConfig.consents[integration.id] ??= {});
+                integrationConsents[credential.label] = shouldCopy;
+                configChanged = true;
+              }
+            }
+
+            const padded = credential.label.padEnd(maxLabelLen);
+            if (shouldCopy) {
+              Docker.copyCredentialToContainer(name, content, credential.containerPath);
+              console.log(`  ${padded}  \u2713`);
+            } else {
+              console.log(`  ${padded}  \u2717 (skipped)`);
+            }
+          }
+
+          if (configChanged) {
+            ProjectConfig.saveProjectConfig(projectConfig);
+          }
         }
-      }
 
-      // TODO: shouldn't this run after the host script run? or maybe even before the container start kicks off? maybe user does something that requires this script to run first. oh and if init script succeeds and anything else fails (like container starting for example) then it should call the teardown script
-      // Run integration init commands inside the container
-      const integrationInitCommands = Docker.getIntegrationInitCommands(integrations);
-      if (integrationInitCommands.length > 0) {
-        await Init.runScriptsInDevShell(integrationInitCommands, name);
-      }
-
-      // Run user init scripts on the host
-      const initScripts = projectConfig.init.map(resolveTemplateVars);
-      if (initScripts.length > 0) {
-        console.log(`\n${sep}`);
-        console.log(`  Running init scripts`);
-        console.log(sep);
-        Init.runScriptsOnHost(initScripts, projectRoot);
+        // Run integration init commands inside the container
+        const integrationInitCommands = Docker.getIntegrationInitCommands(integrations);
+        if (integrationInitCommands.length > 0) {
+          section("Setting up environment");
+          await Init.runScriptsInDevShell(integrationInitCommands, name);
+        }
+      } catch (error) {
+        // Run teardown scripts on failure
+        const teardownScripts = projectConfig.teardown.map((s) => resolveVars(s, vars));
+        if (teardownScripts.length > 0) {
+          console.warn("Setup failed, running teardown scripts...");
+          try {
+            Init.runScriptsOnHost(teardownScripts, projectRoot);
+          } catch {
+            console.warn("Teardown scripts failed.");
+          }
+        }
+        throw error;
       }
 
       // Attach
       if (options.attach) {
-        console.log(`\n${sep}`);
-        console.log(`  Attaching to ${project}/${branch}`);
-        console.log(sep);
+        section(`Attaching to ${project}/${branch}`);
         Docker.attachToContainer(name);
       } else {
         console.log(`\n  To attach: janix attach ${branch}`);

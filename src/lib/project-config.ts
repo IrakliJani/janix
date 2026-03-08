@@ -15,6 +15,8 @@ export interface ProjectConfig {
   init: string[];
   /** Teardown scripts to run before destroying the environment */
   teardown: string[];
+  /** Persisted credential consent per integration */
+  consents: Record<string, Record<string, boolean>>;
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
@@ -24,6 +26,7 @@ const DEFAULT_CONFIG: ProjectConfig = {
   network: null,
   init: [],
   teardown: [],
+  consents: {},
 };
 
 interface LegacyConfig {
@@ -60,6 +63,7 @@ export function loadProjectConfig(): ProjectConfig {
       network: parsed.network ?? DEFAULT_CONFIG.network,
       init: parsed.init ?? DEFAULT_CONFIG.init,
       teardown: parsed.teardown ?? DEFAULT_CONFIG.teardown,
+      consents: parsed.consents ?? DEFAULT_CONFIG.consents,
     };
   } catch {
     console.warn(`Warning: Could not parse ${configPath}, using defaults`);

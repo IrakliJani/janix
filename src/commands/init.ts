@@ -124,6 +124,7 @@ export const initCommand = new Command("init")
       network,
       init: initScripts,
       teardown: teardownScripts,
+      consents: {},
     };
     saveProjectConfig(config);
     console.log(`\n\u2713 Saved ${JANIX_DIR}/config.json`);
