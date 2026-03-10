@@ -1,12 +1,12 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathExists } from "../lib/fs.js";
 import type { DetectableIntegration } from "./types.js";
 
 export const pnpm: DetectableIntegration = {
   id: "pnpm",
   label: "pnpm",
   category: "package-manager",
-  detect: (projectRoot: string) => existsSync(join(projectRoot, "pnpm-lock.yaml")),
+  detect: async (projectRoot: string) => pathExists(join(projectRoot, "pnpm-lock.yaml")),
   dockerfileLines: [],
   volumes: [],
   env: {},

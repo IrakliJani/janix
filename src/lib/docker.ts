@@ -1,120 +1,181 @@
-import { execFileSync, spawn, spawnSync } from "node:child_process";
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { spawn } from "node:child_process";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { createHash } from "node:crypto";
-import { config, containerName, getProjectImageName } from "./config.js";
 import { resolveIntegrations, type Integration } from "../integrations/index.js";
-import { HOME_NIX, DOCKERFILE_TEMPLATE, generateIntegrationsNix, getNixConfigs } from "./nix.js";
+import { config, containerName, getProjectImageName } from "./config.js";
+import { pathExists } from "./fs.js";
+import {
+  generateIntegrationsNix,
+  getDockerfileTemplate,
+  getHomeNix,
+  getNixConfigs,
+} from "./nix.js";
 
 const FLAKE_HASH_LABEL = "janix.flake.hash";
 const DOCKERFILE_HASH_LABEL = "janix.dockerfile.hash";
+const HOME_NIX_HASH_LABEL = "janix.home-nix.hash";
+const INTEGRATIONS_NIX_HASH_LABEL = "janix.integrations-nix.hash";
 const INTEGRATION_LABEL = "janix.integrations";
+const PROJECT_LABEL = "janix.project";
+const BRANCH_LABEL = "janix.branch";
 
 const CACHE_VOLUME = "janix-cache";
 const CACHE_PATH = "/root/.cache";
 
-export function computeFlakeHash(projectRoot: string): string {
+interface RunCommandOptions {
+  cwd?: string;
+  stdio?: "pipe" | "inherit";
+}
+
+function formatCommand(command: string, args: string[]): string {
+  return [command, ...args].join(" ");
+}
+
+function hashContent(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
+}
+
+// When stdio is "inherit", stdout/stderr are null and the resolved value is always "".
+function runCommand(
+  command: string,
+  args: string[],
+  options: RunCommandOptions = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const stdio = options.stdio ?? "pipe";
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio,
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(new Error(`Failed to start ${formatCommand(command, args)}: ${error.message}`));
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+
+      const details = stderr.trim() || stdout.trim();
+      reject(
+        new Error(
+          details || `${formatCommand(command, args)} failed with exit code ${code ?? "unknown"}`,
+        ),
+      );
+    });
+  });
+}
+
+async function runDocker(args: string[]): Promise<string> {
+  const result = await runCommand("docker", args);
+  return result.trim();
+}
+
+async function getImageLabel(project: string, label: string): Promise<string | null> {
+  const imageName = getProjectImageName(project);
+  try {
+    const out = await runDocker([
+      "inspect",
+      "--format",
+      `{{index .Config.Labels "${label}"}}`,
+      imageName,
+    ]);
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function computeFlakeHash(projectRoot: string): Promise<string> {
   const hash = createHash("sha256");
-  hash.update(readFileSync(join(projectRoot, "flake.nix")));
+  hash.update(await readFile(join(projectRoot, "flake.nix")));
   const lockPath = join(projectRoot, "flake.lock");
-  if (existsSync(lockPath)) hash.update(readFileSync(lockPath));
+  if (await pathExists(lockPath)) {
+    hash.update(await readFile(lockPath));
+  }
   return hash.digest("hex").slice(0, 16);
 }
 
-export function getImageFlakeHash(project: string): string | null {
+export async function getImageFlakeHash(project: string): Promise<string | null> {
+  return getImageLabel(project, FLAKE_HASH_LABEL);
+}
+
+export async function getImageFlakeNix(project: string): Promise<string | null> {
   const imageName = getProjectImageName(project);
   try {
-    const out = runDocker([
-      "inspect",
-      "--format",
-      `{{index .Config.Labels "${FLAKE_HASH_LABEL}"}}`,
+    const result = await runCommand("docker", [
+      "run",
+      "--rm",
+      "--entrypoint",
+      "cat",
       imageName,
+      "/flake/flake.nix",
     ]);
-    return out || null;
+    return result.trim() || null;
   } catch {
     return null;
   }
 }
 
-// TODO: this is not optimal, I would expect it to actually use the prebuilt image to diff with the existing one...
-export function getImageFlakeNix(project: string): string | null {
-  const imageName = getProjectImageName(project);
-  const create = spawnSync("docker", ["create", imageName], {
-    encoding: "utf-8",
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  if (create.status !== 0) return null;
-  const cid = create.stdout.trim();
-  const tmpPath = join(tmpdir(), `janix-flake-${Date.now()}.nix`);
-  try {
-    const cp = spawnSync("docker", ["cp", `${cid}:/flake/flake.nix`, tmpPath], { stdio: "pipe" });
-    if (cp.status !== 0) return null;
-    return readFileSync(tmpPath, "utf-8");
-  } finally {
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      /* ignore */
-    }
-    spawnSync("docker", ["rm", cid], { stdio: "pipe" });
-  }
+export async function getImageIntegrations(project: string): Promise<string | null> {
+  return getImageLabel(project, INTEGRATION_LABEL);
 }
 
-export function getImageIntegrations(project: string): string | null {
-  const imageName = getProjectImageName(project);
-  try {
-    const out = runDocker([
-      "inspect",
-      "--format",
-      `{{index .Config.Labels "${INTEGRATION_LABEL}"}}`,
-      imageName,
-    ]);
-    return out || null;
-  } catch {
-    return null;
-  }
+export async function generateDockerfile(integrations: Integration[]): Promise<string> {
+  const template = await getDockerfileTemplate();
+  const lines = integrations.flatMap((i) => i.dockerfileLines).join("\n");
+  return template.replace("{{INTEGRATION_LINES}}", lines || "");
 }
 
-export function computeDockerfileHash(integrations: Integration[]): string {
-  const dockerfile = generateDockerfile(integrations);
-  return createHash("sha256").update(dockerfile).digest("hex").slice(0, 16);
+export async function computeDockerfileHash(integrations: Integration[]): Promise<string> {
+  const dockerfile = await generateDockerfile(integrations);
+  return hashContent(dockerfile);
 }
 
-export function getImageDockerfileHash(project: string): string | null {
-  const imageName = getProjectImageName(project);
-  try {
-    const out = runDocker([
-      "inspect",
-      "--format",
-      `{{index .Config.Labels "${DOCKERFILE_HASH_LABEL}"}}`,
-      imageName,
-    ]);
-    return out || null;
-  } catch {
-    return null;
-  }
+export async function getImageDockerfileHash(project: string): Promise<string | null> {
+  return getImageLabel(project, DOCKERFILE_HASH_LABEL);
 }
 
-export function dockerfileChanged(project: string, integrations: string[]): boolean {
-  const imageHash = getImageDockerfileHash(project);
+export async function dockerfileChanged(project: string, integrations: string[]): Promise<boolean> {
+  const imageHash = await getImageDockerfileHash(project);
   if (!imageHash) return true;
   const resolved = resolveIntegrations(integrations);
-  const currentHash = computeDockerfileHash(resolved);
+  const currentHash = await computeDockerfileHash(resolved);
   return imageHash !== currentHash;
 }
 
-export function generateDockerfile(integrations: Integration[]): string {
-  const lines = integrations.flatMap((i) => i.dockerfileLines).join("\n");
-  return DOCKERFILE_TEMPLATE.replace("{{INTEGRATION_LINES}}", lines || "");
+export async function homeNixChanged(project: string): Promise<boolean> {
+  const imageHash = await getImageLabel(project, HOME_NIX_HASH_LABEL);
+  if (!imageHash) return true;
+  const currentHash = hashContent(await getHomeNix());
+  return imageHash !== currentHash;
+}
+
+export async function integrationsNixChanged(
+  project: string,
+  integrations: string[],
+): Promise<boolean> {
+  const imageHash = await getImageLabel(project, INTEGRATIONS_NIX_HASH_LABEL);
+  if (!imageHash) return true;
+  const resolved = resolveIntegrations(integrations);
+  const integrationsNix = generateIntegrationsNix(integrations, getNixConfigs(resolved));
+  const currentHash = hashContent(integrationsNix);
+  return imageHash !== currentHash;
 }
 
 export function getIntegrationInitCommands(ids: string[]): string[] {
@@ -133,29 +194,24 @@ export function getIntegrationEnv(ids: string[]): Record<string, string> {
   return env;
 }
 
-export function copyCredentialToContainer(
+export async function copyCredentialToContainer(
   container: string,
   content: string,
   containerPath: string,
-): void {
+): Promise<void> {
   const parentDir = dirname(containerPath);
-  spawnSync("docker", ["exec", container, "mkdir", "-p", parentDir], { stdio: "pipe" });
+  await runCommand("docker", ["exec", container, "mkdir", "-p", parentDir]);
 
-  const tmpPath = join(tmpdir(), `janix-cred-${Date.now()}`);
-  writeFileSync(tmpPath, content, { mode: 0o600 });
+  const tempDir = await mkdtemp(join(tmpdir(), "janix-cred-"));
+  const tempPath = join(tempDir, "credential");
+
   try {
-    const result = spawnSync("docker", ["cp", tmpPath, `${container}:${containerPath}`], {
-      stdio: "pipe",
-    });
-    if (result.status !== 0) {
-      throw new Error(`Failed to copy credential to ${containerPath}`);
-    }
+    await writeFile(tempPath, content, { mode: 0o600 });
+    await runCommand("docker", ["cp", tempPath, `${container}:${containerPath}`]);
+  } catch (error) {
+    throw new Error(`Failed to copy credential to ${containerPath}`, { cause: error });
   } finally {
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      /* ignore */
-    }
+    await rm(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -164,66 +220,58 @@ export interface ContainerInfo {
   name: string;
   project: string;
   branch: string;
+  state: string;
   status: string;
 }
 
-function runDocker(args: string[]): string {
-  return execFileSync("docker", args, {
-    encoding: "utf-8",
-    stdio: ["pipe", "pipe", "pipe"],
-  }).trim();
-}
-
-export function imageExists(project: string): boolean {
+export async function imageExists(project: string): Promise<boolean> {
   const imageName = getProjectImageName(project);
   try {
-    runDocker(["image", "inspect", imageName]);
+    await runDocker(["image", "inspect", imageName]);
     return true;
   } catch {
     return false;
   }
 }
 
-export function assertDockerRunning(): void {
-  const result = spawnSync("docker", ["info"], { stdio: "pipe" });
-  if (result.status !== 0) {
+export async function assertDockerRunning(): Promise<void> {
+  try {
+    await runCommand("docker", ["info"]);
+  } catch {
     console.error("Docker is not running. Please start Docker and try again.");
     process.exit(1);
   }
 }
 
-export function buildImage(project: string, projectRoot: string, integrations: string[]): void {
+export async function buildImage(
+  project: string,
+  projectRoot: string,
+  integrations: string[],
+): Promise<void> {
   const imageName = getProjectImageName(project);
   const resolved = resolveIntegrations(integrations);
-  const dockerfile = generateDockerfile(resolved);
-
-  // TODO: how does files in temp dir last?
-  // TODO: second question, can we use those files to actually diff dockerfile and home.nix if they changed at all? we can do so by adding timestamp or unique hash label to a docker images we build?
-  const buildContext = join(tmpdir(), `janix-build-${Date.now()}`);
-  // TODO: I see that you are using a lot of sync functions. cant we use async counterparts? same goes with everything else, like writing files etc...
-  mkdirSync(buildContext, { recursive: true });
+  const dockerfile = await generateDockerfile(resolved);
+  const homeNix = await getHomeNix();
+  const integrationsNix = generateIntegrationsNix(integrations, getNixConfigs(resolved));
+  const buildContext = await mkdtemp(join(tmpdir(), "janix-build-"));
 
   try {
-    // Write generated Dockerfile, home.nix, and integrations.nix
-    writeFileSync(join(buildContext, "Dockerfile"), dockerfile);
-    writeFileSync(join(buildContext, "home.nix"), HOME_NIX);
-    const nixConfigs = getNixConfigs(resolved);
-    writeFileSync(
-      join(buildContext, "integrations.nix"),
-      generateIntegrationsNix(integrations, nixConfigs),
-    );
+    await writeFile(join(buildContext, "Dockerfile"), dockerfile);
+    await writeFile(join(buildContext, "home.nix"), homeNix);
+    await writeFile(join(buildContext, "integrations.nix"), integrationsNix);
 
-    // Copy project's flake files
-    copyFileSync(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));
+    await copyFile(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));
     const flakeLock = join(projectRoot, "flake.lock");
-    if (existsSync(flakeLock)) {
-      copyFileSync(flakeLock, join(buildContext, "flake.lock"));
+    if (await pathExists(flakeLock)) {
+      await copyFile(flakeLock, join(buildContext, "flake.lock"));
     }
 
-    const flakeHash = computeFlakeHash(projectRoot);
-    const dockerfileHash = computeDockerfileHash(resolved);
+    const flakeHash = await computeFlakeHash(projectRoot);
+    const dockerfileHash = await computeDockerfileHash(resolved);
+    const homeNixHash = hashContent(homeNix);
+    const integrationsNixHash = hashContent(integrationsNix);
 
-    const result = spawnSync(
+    await runCommand(
       "docker",
       [
         "build",
@@ -233,6 +281,10 @@ export function buildImage(project: string, projectRoot: string, integrations: s
         `${FLAKE_HASH_LABEL}=${flakeHash}`,
         "--label",
         `${DOCKERFILE_HASH_LABEL}=${dockerfileHash}`,
+        "--label",
+        `${HOME_NIX_HASH_LABEL}=${homeNixHash}`,
+        "--label",
+        `${INTEGRATIONS_NIX_HASH_LABEL}=${integrationsNixHash}`,
         "--label",
         `${INTEGRATION_LABEL}=${integrations.join(",")}`,
         "-f",
@@ -244,12 +296,8 @@ export function buildImage(project: string, projectRoot: string, integrations: s
         stdio: "inherit",
       },
     );
-
-    if (result.status !== 0) {
-      throw new Error(`Docker build failed with exit code ${result.status}`);
-    }
   } finally {
-    rmSync(buildContext, { recursive: true, force: true });
+    await rm(buildContext, { recursive: true, force: true });
   }
 }
 
@@ -263,26 +311,29 @@ export interface CreateContainerOptions {
   env?: Record<string, string>;
 }
 
-export function ensureVolumeExists(volumeName: string): void {
+async function ensureVolumeExists(volumeName: string): Promise<void> {
   try {
-    runDocker(["volume", "inspect", volumeName]);
+    await runDocker(["volume", "inspect", volumeName]);
   } catch {
-    runDocker(["volume", "create", volumeName]);
+    await runDocker(["volume", "create", volumeName]);
   }
 }
 
-export function createContainer(options: CreateContainerOptions): string {
+export async function createContainer(options: CreateContainerOptions): Promise<string> {
   const { project, branch, clonePath, projectRoot, network, integrations = [], env = {} } = options;
   const name = containerName(project, branch);
 
-  // Always mount the shared cache volume
-  ensureVolumeExists(CACHE_VOLUME);
+  await ensureVolumeExists(CACHE_VOLUME);
 
   const args = [
     "run",
     "-d",
     "--name",
     name,
+    "--label",
+    `${PROJECT_LABEL}=${project}`,
+    "--label",
+    `${BRANCH_LABEL}=${branch}`,
     "-v",
     `${clonePath}:${config.containerWorkspace}`,
     "-v",
@@ -296,25 +347,21 @@ export function createContainer(options: CreateContainerOptions): string {
     "--add-host=host.docker.internal:host-gateway",
   ];
 
-  // Mount integration volumes
   const integrationVolumes = getIntegrationVolumes(integrations);
   for (const vol of integrationVolumes) {
-    ensureVolumeExists(vol.name);
+    await ensureVolumeExists(vol.name);
     args.push("-v", `${vol.name}:${vol.path}`);
   }
 
-  // Add integration env vars
   const integrationEnv = getIntegrationEnv(integrations);
   for (const [key, value] of Object.entries(integrationEnv)) {
     args.push("-e", `${key}=${value}`);
   }
 
-  // Add user env vars
   for (const [key, value] of Object.entries(env)) {
     args.push("-e", `${key}=${value}`);
   }
 
-  // Add network if specified
   if (network) {
     args.push("--network", network);
   }
@@ -325,42 +372,49 @@ export function createContainer(options: CreateContainerOptions): string {
   return runDocker(args);
 }
 
-// TODO: this list is ugly, basic and lame, maybe also offer to attach to the container? but also show all the statuses that you show RN.
-export function listContainers(): ContainerInfo[] {
+export async function listContainers(): Promise<ContainerInfo[]> {
   try {
-    const output = runDocker([
+    const output = await runDocker([
       "ps",
       "-a",
       "--filter",
       `name=${config.containerPrefix}`,
       "--format",
-      "{{.ID}}\t{{.Names}}\t{{.Status}}",
+      `{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Label "${PROJECT_LABEL}"}}\t{{.Label "${BRANCH_LABEL}"}}`,
     ]);
 
     if (!output) return [];
 
-    return output.split("\n").map((line) => {
-      const [id, name, status] = line.split("\t");
-      const parts = name?.replace(`${config.containerPrefix}-`, "").split("-") ?? [];
-      const project = parts[0] ?? "";
-      const branch = parts.slice(1).join("-");
+    return output
+      .split("\n")
+      .map((line) => {
+        const [id, name, state, status, labeledProject, labeledBranch] = line.split("\t");
+        const parsed = name?.replace(`${config.containerPrefix}-`, "") ?? "";
+        const parts = parsed.split("-");
+        const project = labeledProject || parts[0] || "";
+        const branch = labeledBranch || parts.slice(1).join("-");
 
-      return {
-        id: id ?? "",
-        name: name ?? "",
-        project,
-        branch,
-        status: status ?? "",
-      };
-    });
+        return {
+          id: id ?? "",
+          name: name ?? "",
+          project,
+          branch,
+          state: state ?? "",
+          status: status ?? "",
+        };
+      })
+      .sort((a, b) => a.project.localeCompare(b.project) || a.branch.localeCompare(b.branch));
   } catch {
     return [];
   }
 }
 
-export function getContainer(project: string, branch: string): ContainerInfo | undefined {
+export async function getContainer(
+  project: string,
+  branch: string,
+): Promise<ContainerInfo | undefined> {
   const name = containerName(project, branch);
-  const containers = listContainers();
+  const containers = await listContainers();
   return containers.find((c) => c.name === name);
 }
 
@@ -387,34 +441,35 @@ export function attachToContainer(name: string): void {
   });
 }
 
-export function stopContainer(name: string): void {
-  runDocker(["stop", name]);
+export async function stopContainer(name: string): Promise<void> {
+  await runDocker(["stop", name]);
 }
 
-export function startContainer(name: string): void {
-  runDocker(["start", name]);
+export async function startContainer(name: string): Promise<void> {
+  await runDocker(["start", name]);
 }
 
-export function removeContainer(name: string): void {
+export async function removeContainer(name: string): Promise<void> {
   try {
-    runDocker(["stop", name]);
+    await runDocker(["stop", name]);
   } catch {
     // Container might already be stopped
   }
-  runDocker(["rm", name]);
+  await runDocker(["rm", name]);
 }
 
-export function isContainerRunning(name: string): boolean {
-  const result = spawnSync("docker", ["inspect", "--format={{.State.Running}}", name], {
-    encoding: "utf-8",
-    stdio: "pipe",
-  });
-  return result.status === 0 && result.stdout.trim() === "true";
-}
-
-export function listNetworks(): string[] {
+export async function isContainerRunning(name: string): Promise<boolean> {
   try {
-    const output = runDocker(["network", "ls", "--format", "{{.Name}}"]);
+    const result = await runDocker(["inspect", "--format={{.State.Running}}", name]);
+    return result === "true";
+  } catch {
+    return false;
+  }
+}
+
+export async function listNetworks(): Promise<string[]> {
+  try {
+    const output = await runDocker(["network", "ls", "--format", "{{.Name}}"]);
     return output.split("\n").filter((n) => n);
   } catch {
     return [];

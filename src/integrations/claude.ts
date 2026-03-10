@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
+import { join } from "node:path";
 import { config } from "../lib/config.js";
+import { pathExists } from "../lib/fs.js";
 import type { SelectableIntegration } from "./types.js";
 
-function resolveCredentials(): string | null {
+async function resolveCredentials(): Promise<string | null> {
   if (platform() === "darwin") {
     try {
       return (
@@ -20,12 +21,12 @@ function resolveCredentials(): string | null {
   }
 
   const credPath = join(homedir(), ".claude", ".credentials.json");
-  return existsSync(credPath) ? readFileSync(credPath, "utf-8") : null;
+  return (await pathExists(credPath)) ? await readFile(credPath, "utf-8") : null;
 }
 
-function resolveSettings(): string | null {
+async function resolveSettings(): Promise<string | null> {
   const settingsPath = join(homedir(), ".claude", "settings.json");
-  return existsSync(settingsPath) ? readFileSync(settingsPath, "utf-8") : null;
+  return (await pathExists(settingsPath)) ? await readFile(settingsPath, "utf-8") : null;
 }
 
 const ONBOARDING_JSON = JSON.stringify({

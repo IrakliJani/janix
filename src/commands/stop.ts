@@ -9,16 +9,14 @@ export const stopCommand = new Command("stop")
   .description("Stop a dev environment (can be restarted)")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {
-    // Verify we're in a janix project
-    if (!findJanixRoot()) {
+    if (!(await findJanixRoot())) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
-    const project = getProjectName();
-    const clones = listClones();
+    const project = await getProjectName();
+    const clones = await listClones();
 
-    // Get clone name
     let cloneName: string;
     if (cloneArg) {
       const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
@@ -36,15 +34,13 @@ export const stopCommand = new Command("stop")
       cloneName = await selectClone(clones);
     }
 
-    // Find the clone to get its branch
     const clone = clones.find((c) => c.name === cloneName);
     if (!clone) {
       console.error(`Clone not found: ${cloneName}`);
       process.exit(1);
     }
 
-    // Get container
-    const container = getContainer(project, clone.branch);
+    const container = await getContainer(project, clone.branch);
     if (!container) {
       console.error(`No container found for ${cloneName}`);
       process.exit(1);
@@ -53,6 +49,6 @@ export const stopCommand = new Command("stop")
     const name = containerName(project, clone.branch);
 
     console.log(`Stopping ${cloneName}...`);
-    stopContainer(name);
+    await stopContainer(name);
     console.log("Stopped");
   });

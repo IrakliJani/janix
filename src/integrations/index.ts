@@ -1,10 +1,10 @@
-import type { Integration, SelectableIntegration, DetectableIntegration } from "./types.js";
 import { claude } from "./claude.js";
 import { git } from "./git.js";
 import { pi } from "./pi.js";
-import { starship } from "./starship.js";
-import { vim } from "./vim.js";
 import { pnpm } from "./pnpm.js";
+import { starship } from "./starship.js";
+import type { DetectableIntegration, Integration, SelectableIntegration } from "./types.js";
+import { vim } from "./vim.js";
 
 export type {
   Integration,
@@ -28,8 +28,15 @@ export function getSelectableIntegrations(): SelectableIntegration[] {
   );
 }
 
-export function detectIntegrations(projectRoot: string): DetectableIntegration[] {
-  return ALL_INTEGRATIONS.filter(
-    (i): i is DetectableIntegration => i.category === "package-manager" && i.detect(projectRoot),
+export async function detectIntegrations(projectRoot: string): Promise<DetectableIntegration[]> {
+  const detected = await Promise.all(
+    ALL_INTEGRATIONS.filter(
+      (i): i is DetectableIntegration => i.category === "package-manager",
+    ).map(async (integration) => ({
+      integration,
+      matches: await integration.detect(projectRoot),
+    })),
   );
+
+  return detected.filter((entry) => entry.matches).map((entry) => entry.integration);
 }

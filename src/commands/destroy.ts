@@ -14,18 +14,16 @@ export const destroyCommand = new Command("destroy")
   .option("-f, --force", "Skip confirmation")
   .option("-y, --yes", "Skip confirmation")
   .action(async (cloneArg: string | undefined, options: { force: boolean; yes: boolean }) => {
-    // Verify we're in a janix project
-    if (!Config.findJanixRoot()) {
+    if (!(await Config.findJanixRoot())) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
     }
 
-    Docker.assertDockerRunning();
+    await Docker.assertDockerRunning();
 
-    const project = Config.getProjectName();
-    const clones = Git.listClones();
+    const project = await Config.getProjectName();
+    const clones = await Git.listClones();
 
-    // Get clone name
     let cloneName: string;
     if (cloneArg) {
       const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
@@ -43,7 +41,6 @@ export const destroyCommand = new Command("destroy")
       cloneName = await Interactive.selectClone(clones);
     }
 
-    // Find the clone to get its branch
     const clone = clones.find((c) => c.name === cloneName);
     if (!clone) {
       console.error(`Clone not found: ${cloneName}`);
@@ -58,10 +55,9 @@ export const destroyCommand = new Command("destroy")
       }
     }
 
-    // Run teardown scripts on the host
-    const projectConfig = ProjectConfig.loadProjectConfig();
-    const projectRoot = Config.getProjectRoot();
-    const container = Docker.getContainer(project, clone.branch);
+    const projectConfig = await ProjectConfig.loadProjectConfig();
+    const projectRoot = await Config.getProjectRoot();
+    const container = await Docker.getContainer(project, clone.branch);
     if (projectConfig.teardown.length > 0) {
       const vars = buildJanixVars(project, clone.branch);
       console.log("Running teardown scripts...");
@@ -75,17 +71,15 @@ export const destroyCommand = new Command("destroy")
       }
     }
 
-    // Remove container if it exists
     if (container) {
       const name = Config.containerName(project, clone.branch);
       console.log(`Removing container ${name}...`);
-      Docker.removeContainer(name);
+      await Docker.removeContainer(name);
       console.log("Container removed");
     }
 
-    // Remove clone
     console.log(`Removing clone ${cloneName}...`);
-    Git.removeClone(clone.branch);
+    await Git.removeClone(clone.branch);
     console.log("Clone removed");
 
     console.log("Done");

@@ -1,38 +1,76 @@
-import { readFileSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Integration } from "../integrations/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SUPPORT_DIR = resolve(__dirname, "../../support");
 
-export const HOME_NIX = readFileSync(join(SUPPORT_DIR, "nix/home.nix.template"), "utf-8");
-export const DOCKERFILE_TEMPLATE = readFileSync(
-  join(SUPPORT_DIR, "docker/Dockerfile.template"),
-  "utf-8",
-);
+let _homeNix: string | undefined;
+let _dockerfileTemplate: string | undefined;
+
+export async function getHomeNix(): Promise<string> {
+  _homeNix ??= await readFile(join(SUPPORT_DIR, "nix/home.nix.template"), "utf-8");
+  return _homeNix;
+}
+
+export async function getDockerfileTemplate(): Promise<string> {
+  _dockerfileTemplate ??= await readFile(join(SUPPORT_DIR, "docker/Dockerfile.template"), "utf-8");
+  return _dockerfileTemplate;
+}
+
+interface NixAttrSet {
+  [key: string]: NixValue;
+}
+
+type NixValue = string | string[] | NixAttrSet;
 
 function escapeNixString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$\{/g, "\\${");
 }
 
-// TODO: this is unreadable as fuck, is there a json to nix object converter? :D
+function renderNixValue(value: NixValue, indent = 0): string {
+  if (typeof value === "string") {
+    return `"${escapeNixString(value)}"`;
+  }
+
+  if (Array.isArray(value)) {
+    return `[ ${value.map((item) => renderNixValue(item, indent)).join(" ")} ]`;
+  }
+
+  return renderNixAttrSet(value, indent);
+}
+
+function renderNixAttrSet(attrs: Record<string, NixValue>, indent = 0): string {
+  const pad = " ".repeat(indent);
+  const innerPad = " ".repeat(indent + 2);
+  const entries = Object.entries(attrs);
+
+  if (entries.length === 0) {
+    return "{ }";
+  }
+
+  return [
+    "{",
+    ...entries.map(([key, value]) => `${innerPad}${key} = ${renderNixValue(value, indent + 2)};`),
+    `${pad}}`,
+  ].join("\n");
+}
+
 export function generateIntegrationsNix(
   ids: string[],
   nixConfigs: { id: string; config: Record<string, string> }[],
 ): string {
-  const lines: string[] = [];
-  lines.push(`  ids = [ ${ids.map((id) => `"${id}"`).join(" ")} ];`);
+  const integrations: Record<string, NixValue> = {
+    ids,
+  };
+
   for (const { id, config } of nixConfigs) {
-    const entries = Object.entries(config);
-    if (entries.length === 0) continue;
-    lines.push(`  ${id} = {`);
-    for (const [k, v] of entries) {
-      lines.push(`    ${k} = "${escapeNixString(v)}";`);
-    }
-    lines.push(`  };`);
+    if (Object.keys(config).length === 0) continue;
+    integrations[id] = config;
   }
-  return `{\n${lines.join("\n")}\n}\n`;
+
+  return `${renderNixAttrSet(integrations)}\n`;
 }
 
 export function getNixConfigs(

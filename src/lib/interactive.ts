@@ -1,17 +1,15 @@
 import { confirm as inquirerConfirm, input } from "@inquirer/prompts";
 import search from "@inquirer/search";
-import { getProjectRoot } from "./config.js";
-import { listBranches, fetchAllAsync } from "./git.js";
 import { listContainers, listNetworks, type ContainerInfo } from "./docker.js";
+import { getProjectRoot } from "./config.js";
+import { fetchAllAsync, listBranches } from "./git.js";
 
 export async function selectBranch(): Promise<string> {
-  const projectRoot = getProjectRoot();
+  const projectRoot = await getProjectRoot();
 
-  // Start with local branches immediately
   let branches = listBranches(projectRoot);
   let isFetching = true;
 
-  // Fetch remote branches in background
   fetchAllAsync(projectRoot)
     .then(() => {
       branches = listBranches(projectRoot);
@@ -34,16 +32,14 @@ export async function selectBranch(): Promise<string> {
           ...(b.author ? { description: b.author } : {}),
         }));
 
-      // Add loading indicator if still fetching
       if (isFetching && filtered.length < 20) {
-        filtered.push({ name: "⏳ Fetching remote branches...", value: "__loading__" });
+        filtered.push({ name: "\u23f3 Fetching remote branches...", value: "__loading__" });
       }
 
       return filtered;
     },
   });
 
-  // If user somehow selected loading indicator, wait and retry
   if (branch === "__loading__") {
     return selectBranch();
   }
@@ -52,7 +48,7 @@ export async function selectBranch(): Promise<string> {
 }
 
 export async function selectContainer(): Promise<ContainerInfo> {
-  const containers = listContainers();
+  const containers = await listContainers();
 
   if (containers.length === 0) {
     console.error("No containers found");
@@ -69,7 +65,7 @@ export async function selectContainer(): Promise<ContainerInfo> {
         .map((c) => ({
           value: c,
           name: `${c.project}/${c.branch}`,
-          description: c.status.toLowerCase().includes("up") ? "running" : "stopped",
+          description: c.state.toLowerCase() === "running" ? "running" : "stopped",
         }));
     },
   });
@@ -108,9 +104,8 @@ export async function selectClone(
 }
 
 export async function selectNetwork(): Promise<string | null> {
-  const networks = listNetworks();
+  const networks = await listNetworks();
 
-  // Add skip option
   const options = [
     { name: "(skip)", value: null as string | null },
     ...networks.map((n) => ({ name: n, value: n as string | null })),
@@ -127,10 +122,6 @@ export async function selectNetwork(): Promise<string | null> {
   return network;
 }
 
-/**
- * Prompt for multiple lines of input (paths, scripts, etc.).
- * Empty line finishes input.
- */
 export async function inputMultiLine(prompt: string): Promise<string[]> {
   console.log(prompt);
   console.log("  (Enter paths one at a time, empty line to finish)");
@@ -154,16 +145,15 @@ export async function confirm(message: string): Promise<boolean> {
 
 const DONE = "__done__";
 
-/**
- * Select .env files in load order (each pick appends to the ordered list).
- */
 export async function selectEnvFiles(available: string[]): Promise<string[]> {
   const selected: string[] = [];
 
   while (true) {
     const remaining = available.filter((f) => !selected.includes(f));
     const label =
-      selected.length > 0 ? `Add .env file (order: ${selected.join(" → ")}):` : "Add .env file:";
+      selected.length > 0
+        ? `Add .env file (order: ${selected.join(" \u2192 ")}):`
+        : "Add .env file:";
 
     const file = await search({
       message: label,
@@ -171,7 +161,10 @@ export async function selectEnvFiles(available: string[]): Promise<string[]> {
         const q = term?.toLowerCase() ?? "";
         return [
           { name: "(done)", value: DONE },
-          ...selected.map((f, i) => ({ name: `${i + 1}. ✓ ${f}  [remove]`, value: `remove:${f}` })),
+          ...selected.map((f, i) => ({
+            name: `${i + 1}. \u2713 ${f}  [remove]`,
+            value: `remove:${f}`,
+          })),
           ...remaining
             .filter((f) => f.toLowerCase().includes(q))
             .map((f) => ({ name: f, value: f })),
@@ -190,9 +183,6 @@ export async function selectEnvFiles(available: string[]): Promise<string[]> {
   return selected;
 }
 
-/**
- * Prompt to override specific env vars. Shows keys only (no values).
- */
 export async function selectEnvOverrides(
   vars: Record<string, string>,
 ): Promise<Record<string, string>> {
@@ -213,7 +203,7 @@ export async function selectEnvOverrides(
           ...keys
             .filter((k) => k.toLowerCase().includes(q))
             .map((k) => ({
-              name: overrides[k] !== undefined ? `${k}  ✓` : k,
+              name: overrides[k] !== undefined ? `${k}  \u2713` : k,
               value: k,
             })),
         ];

@@ -1,6 +1,6 @@
 export interface Credential {
   label: string;
-  resolve: () => string | null;
+  resolve: () => Promise<string | null>;
   containerPath: string;
   requiresConsent?: boolean;
 }
@@ -23,7 +23,7 @@ export interface SelectableIntegration extends BaseIntegration {
 
 export interface DetectableIntegration extends BaseIntegration {
   category: "package-manager";
-  detect: (projectRoot: string) => boolean;
+  detect: (projectRoot: string) => Promise<boolean>;
 }
 
 export type Integration = SelectableIntegration | DetectableIntegration;

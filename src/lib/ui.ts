@@ -1,7 +1,7 @@
-import { writeFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export function separator(): string {
   const cols = process.stdout.columns || 80;
@@ -15,16 +15,16 @@ export function section(title: string): void {
   console.log(sep);
 }
 
-export function showFileDiff(oldContent: string, newPath: string): void {
+export async function showFileDiff(oldContent: string, newPath: string): Promise<void> {
   const oldTmp = join(tmpdir(), `janix-diff-old-${Date.now()}`);
   try {
-    writeFileSync(oldTmp, oldContent);
+    await writeFile(oldTmp, oldContent);
     spawnSync("git", ["diff", "--no-index", "--color=always", oldTmp, newPath], {
       stdio: "inherit",
     });
   } finally {
     try {
-      unlinkSync(oldTmp);
+      await unlink(oldTmp);
     } catch {
       /* ignore */
     }

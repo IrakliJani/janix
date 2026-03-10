@@ -1,11 +1,9 @@
 import { execSync, spawn, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.js";
+import { pathExists } from "./fs.js";
 
-/**
- * Run scripts in the container inside nix develop (for access to flake devShell packages).
- */
 export function runScriptsInDevShell(
   scripts: string[],
   containerName: string,
@@ -46,9 +44,6 @@ export function runScriptsInDevShell(
   });
 }
 
-/**
- * Run scripts on the host machine.
- */
 export function runScriptsOnHost(scripts: string[], cwd: string): void {
   for (const script of scripts) {
     const result = spawnSync(script, { cwd, stdio: "inherit", shell: true });
@@ -58,27 +53,22 @@ export function runScriptsOnHost(scripts: string[], cwd: string): void {
   }
 }
 
-/**
- * Add a line to .gitignore if not already present.
- */
-export function addToGitignore(projectRoot: string, line: string): boolean {
+export async function addToGitignore(projectRoot: string, line: string): Promise<boolean> {
   const gitignorePath = join(projectRoot, ".gitignore");
+  const exists = await pathExists(gitignorePath);
 
-  if (existsSync(gitignorePath)) {
-    const content = readFileSync(gitignorePath, "utf-8");
+  if (exists) {
+    const content = await readFile(gitignorePath, "utf-8");
     if (content.includes(line)) {
-      return false; // Already present
+      return false;
     }
   }
 
-  const newLine = existsSync(gitignorePath) ? `\n${line}\n` : `${line}\n`;
-  appendFileSync(gitignorePath, newLine);
+  const newLine = exists ? `\n${line}\n` : `${line}\n`;
+  await appendFile(gitignorePath, newLine);
   return true;
 }
 
-/**
- * Get the current git branch name.
- */
 export function getCurrentBranch(repoPath: string): string {
   try {
     return execSync("git rev-parse --abbrev-ref HEAD", {
@@ -91,9 +81,6 @@ export function getCurrentBranch(repoPath: string): string {
   }
 }
 
-/**
- * Check if current directory is a git repository.
- */
 export function isGitRepo(path: string): boolean {
   try {
     execSync("git rev-parse --git-dir", {

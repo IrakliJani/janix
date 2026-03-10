@@ -1,19 +1,20 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "dotenv";
+import { pathExists } from "./fs.js";
 
-/**
- * Load and merge env files in order (later files override earlier ones).
- */
-export function loadEnvFiles(files: string[], projectRoot: string): Record<string, string> {
+export async function loadEnvFiles(
+  files: string[],
+  projectRoot: string,
+): Promise<Record<string, string>> {
   let merged: Record<string, string> = {};
   for (const file of files) {
     const filePath = join(projectRoot, file);
-    if (!existsSync(filePath)) {
+    if (!(await pathExists(filePath))) {
       console.warn(`  Warning: ${file} not found, skipping`);
       continue;
     }
-    merged = { ...merged, ...parse(readFileSync(filePath)) };
+    merged = { ...merged, ...parse(await readFile(filePath)) };
   }
   return merged;
 }

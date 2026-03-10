@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { getClonesDir, getClonePath, getProjectRoot } from "./config.js";
+import { mkdir, readdir, rm } from "node:fs/promises";
+import { getClonePath, getClonesDir, getProjectRoot } from "./config.js";
+import { pathExists } from "./fs.js";
 
 function runGit(args: string[], cwd: string): string {
   return execFileSync("git", args, {
@@ -43,7 +44,6 @@ export interface BranchInfo {
 }
 
 export function listBranches(repoPath: string): BranchInfo[] {
-  // Sort by committerdate descending (most recent first), deduplicate by stripped name
   const output = runGit(
     [
       "for-each-ref",
@@ -63,7 +63,6 @@ export function listBranches(repoPath: string): BranchInfo[] {
     if (refname.startsWith("refs/heads/")) {
       name = refname.slice("refs/heads/".length);
     } else if (refname.startsWith("refs/remotes/")) {
-      // Strip "refs/remotes/<remote>/" — remote name is the first path segment
       const withoutPrefix = refname.slice("refs/remotes/".length);
       name = withoutPrefix.slice(withoutPrefix.indexOf("/") + 1);
     } else {
@@ -82,13 +81,14 @@ export function listLocalBranches(repoPath: string): string[] {
   return output.split("\n").filter((b) => b);
 }
 
-export function listClones(): Array<{ name: string; path: string; branch: string }> {
-  const clonesDir = getClonesDir();
-  if (!existsSync(clonesDir)) return [];
+export async function listClones(): Promise<Array<{ name: string; path: string; branch: string }>> {
+  const clonesDir = await getClonesDir();
+  if (!(await pathExists(clonesDir))) return [];
 
   const clones: Array<{ name: string; path: string; branch: string }> = [];
+  const entries = await readdir(clonesDir, { withFileTypes: true });
 
-  for (const dir of readdirSync(clonesDir, { withFileTypes: true })) {
+  for (const dir of entries) {
     if (!dir.isDirectory()) continue;
     const clonePath = `${clonesDir}/${dir.name}`;
     try {
@@ -102,43 +102,34 @@ export function listClones(): Array<{ name: string; path: string; branch: string
   return clones;
 }
 
-export function cloneExists(branch: string): boolean {
-  const clonePath = getClonePath(branch);
-  return existsSync(clonePath);
+export async function cloneExists(branch: string): Promise<boolean> {
+  return pathExists(await getClonePath(branch));
 }
 
-export function createClone(branch: string): string {
-  const clonePath = getClonePath(branch);
-  const repoPath = getProjectRoot();
+export async function createClone(branch: string): Promise<string> {
+  const clonePath = await getClonePath(branch);
+  const repoPath = await getProjectRoot();
 
-  if (existsSync(clonePath)) {
+  if (await pathExists(clonePath)) {
     console.log(`Clone already exists at ${clonePath}`);
     return clonePath;
   }
 
-  // Ensure clones directory exists
-  const clonesDir = getClonesDir();
-  if (!existsSync(clonesDir)) {
-    mkdirSync(clonesDir, { recursive: true });
-  }
+  const clonesDir = await getClonesDir();
+  await mkdir(clonesDir, { recursive: true });
 
-  // Clone from local repo (fast, uses hardlinks)
   runGit(["clone", repoPath, clonePath], clonesDir);
 
-  // Try to checkout the branch
-  // First check if it exists as a local branch (e.g., default branch)
   if (refExists(clonePath, `refs/heads/${branch}`)) {
     runGit(["checkout", branch], clonePath);
     return clonePath;
   }
 
-  // Check if it exists in origin (the host repo)
   if (refExists(clonePath, `refs/remotes/origin/${branch}`)) {
     runGit(["checkout", "-b", branch, `origin/${branch}`, "--no-track"], clonePath);
     return clonePath;
   }
 
-  // Fetch from origin in case it has new branches
   try {
     runGit(["fetch", "origin", branch], clonePath);
     runGit(["checkout", "-b", branch, "FETCH_HEAD", "--no-track"], clonePath);
@@ -150,10 +141,10 @@ export function createClone(branch: string): string {
   throw new Error(`Could not checkout branch '${branch}' in clone`);
 }
 
-export function removeClone(branch: string): void {
-  const clonePath = getClonePath(branch);
-  if (existsSync(clonePath)) {
-    rmSync(clonePath, { recursive: true, force: true });
+export async function removeClone(branch: string): Promise<void> {
+  const clonePath = await getClonePath(branch);
+  if (await pathExists(clonePath)) {
+    await rm(clonePath, { recursive: true, force: true });
   }
 }
 

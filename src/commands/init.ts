@@ -1,10 +1,11 @@
-import { Command } from "commander";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { mkdir, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { checkbox } from "@inquirer/prompts";
+import { Command } from "commander";
 import { JANIX_DIR, CLONES_DIR, sanitizeBranchForId, sanitizeBranchSafe } from "../lib/config.js";
+import { loadEnvFiles } from "../lib/env.js";
+import { pathExists } from "../lib/fs.js";
 import { isGitRepo, addToGitignore, getCurrentBranch } from "../lib/init.js";
-import { saveProjectConfig, type ProjectConfig } from "../lib/project-config.js";
 import { getSelectableIntegrations, detectIntegrations } from "../integrations/index.js";
 import {
   inputMultiLine,
@@ -12,22 +13,20 @@ import {
   selectEnvFiles,
   selectEnvOverrides,
 } from "../lib/interactive.js";
-import { loadEnvFiles } from "../lib/env.js";
+import { saveProjectConfig, type ProjectConfig } from "../lib/project-config.js";
 
 export const initCommand = new Command("init")
   .description("Initialize janix in current git repository")
   .action(async () => {
     const cwd = process.cwd();
 
-    // Verify current directory is a git repo
     if (!isGitRepo(cwd)) {
       console.error("Error: Not a git repository");
       console.error("Run 'git init' first or navigate to a git repository");
       process.exit(1);
     }
 
-    // Require flake.nix
-    if (!existsSync(join(cwd, "flake.nix"))) {
+    if (!(await pathExists(join(cwd, "flake.nix")))) {
       console.error("Error: No flake.nix found in project root");
       console.error("janix requires a flake.nix to define the dev environment.");
       process.exit(1);
@@ -43,9 +42,8 @@ export const initCommand = new Command("init")
     ].join("\n");
     const janixDir = join(cwd, JANIX_DIR);
 
-    // Check if already initialized (directory + config file must both exist)
     const configFile = join(janixDir, "config.json");
-    if (existsSync(janixDir) && existsSync(configFile)) {
+    if ((await pathExists(janixDir)) && (await pathExists(configFile))) {
       console.log(`janix already initialized in ${projectName}`);
       console.log(`Config at: ${configFile}`);
       return;
@@ -53,23 +51,19 @@ export const initCommand = new Command("init")
 
     console.log(`\nInitializing janix for ${projectName}...`);
 
-    // Create .janix directory
-    mkdirSync(janixDir, { recursive: true });
+    await mkdir(janixDir, { recursive: true });
     console.log(`\u2713 Created ${JANIX_DIR}/`);
 
-    // Create clones directory
     const clonesDir = join(janixDir, CLONES_DIR);
-    mkdirSync(clonesDir, { recursive: true });
+    await mkdir(clonesDir, { recursive: true });
 
     console.log("\u2713 Detected flake.nix");
 
-    // Auto-detect package manager integrations
-    const detectedPMs = detectIntegrations(cwd);
+    const detectedPMs = await detectIntegrations(cwd);
     for (const pm of detectedPMs) {
       console.log(`\u2713 Detected ${pm.label}`);
     }
 
-    // Prompt for selectable integrations (agents + shell-tools)
     const selectable = getSelectableIntegrations();
     const selectedIntegrations = await checkbox({
       message: "Select integrations:",
@@ -80,11 +74,9 @@ export const initCommand = new Command("init")
       })),
     });
 
-    // Merge detected PMs + user-selected integrations
     const integrations = [...selectedIntegrations, ...detectedPMs.map((pm) => pm.id)];
 
-    // Find available .env files
-    const envFiles = readdirSync(cwd).filter(
+    const envFiles = (await readdir(cwd)).filter(
       (f) => f.startsWith(".env") && !f.endsWith(".example") && !f.endsWith(".sample"),
     );
 
@@ -95,7 +87,7 @@ export const initCommand = new Command("init")
       selectedEnvFiles = await selectEnvFiles(envFiles);
 
       if (selectedEnvFiles.length > 0) {
-        const envVars = loadEnvFiles(selectedEnvFiles, cwd);
+        const envVars = await loadEnvFiles(selectedEnvFiles, cwd);
         if (Object.keys(envVars).length > 0) {
           console.log("\n  Available vars:");
           console.log(varHint);
@@ -116,7 +108,6 @@ export const initCommand = new Command("init")
     console.log(varHint);
     const teardownScripts = await inputMultiLine("Teardown scripts to run on destroy:");
 
-    // Save config
     const config: ProjectConfig = {
       integrations,
       envFiles: selectedEnvFiles,
@@ -126,12 +117,11 @@ export const initCommand = new Command("init")
       teardown: teardownScripts,
       consents: {},
     };
-    saveProjectConfig(config);
+    await saveProjectConfig(config);
     console.log(`\n\u2713 Saved ${JANIX_DIR}/config.json`);
 
-    // Add clones to gitignore
     const gitignoreLine = `${JANIX_DIR}/${CLONES_DIR}/`;
-    if (addToGitignore(cwd, gitignoreLine)) {
+    if (await addToGitignore(cwd, gitignoreLine)) {
       console.log(`\u2713 Added ${gitignoreLine} to .gitignore`);
     }
 
