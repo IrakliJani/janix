@@ -1,4 +1,4 @@
-import { execSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "./config.js";
@@ -67,28 +67,4 @@ export async function addToGitignore(projectRoot: string, line: string): Promise
   const newLine = exists ? `\n${line}\n` : `${line}\n`;
   await appendFile(gitignorePath, newLine);
   return true;
-}
-
-export function getCurrentBranch(repoPath: string): string {
-  try {
-    return execSync("git rev-parse --abbrev-ref HEAD", {
-      cwd: repoPath,
-      stdio: ["pipe", "pipe", "pipe"],
-      encoding: "utf-8",
-    }).trim();
-  } catch {
-    return "main";
-  }
-}
-
-export function isGitRepo(path: string): boolean {
-  try {
-    execSync("git rev-parse --git-dir", {
-      cwd: path,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return true;
-  } catch {
-    return false;
-  }
 }

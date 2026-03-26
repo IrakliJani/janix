@@ -148,9 +148,25 @@ export async function removeClone(branch: string): Promise<void> {
   }
 }
 
+export function getCurrentBranch(repoPath: string): string {
+  try {
+    return runGit(["rev-parse", "--abbrev-ref", "HEAD"], repoPath);
+  } catch {
+    return "main";
+  }
+}
+
+export function isGitRepo(path: string): boolean {
+  try {
+    runGit(["rev-parse", "--git-dir"], path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createBranch(repoPath: string, branch: string, base: string): void {
-  runGit(["checkout", "-b", branch, base], repoPath);
-  runGit(["checkout", "-"], repoPath);
+  runGit(["branch", branch, base], repoPath);
 }
 
 export function branchExists(repoPath: string, branch: string): boolean {

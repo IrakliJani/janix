@@ -5,7 +5,8 @@ import { Command } from "commander";
 import { JANIX_DIR, CLONES_DIR, sanitizeBranchForId, sanitizeBranchSafe } from "../lib/config.js";
 import { loadEnvFiles } from "../lib/env.js";
 import { pathExists } from "../lib/fs.js";
-import { isGitRepo, addToGitignore, getCurrentBranch } from "../lib/init.js";
+import { getCurrentBranch, isGitRepo } from "../lib/git.js";
+import { addToGitignore } from "../lib/init.js";
 import { getSelectableIntegrations, detectIntegrations } from "../integrations/index.js";
 import {
   inputMultiLine,

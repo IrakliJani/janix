@@ -47,11 +47,12 @@ export const createCommand = new Command("create")
   .argument("[branch]", "Branch name (interactive picker if not provided)")
   .option("--no-attach", "Don't attach to container after creation")
   .option("--rebuild", "Force rebuild the Docker image")
+  .option("--from <branch>", "Base branch when creating a new branch (default: current branch)")
   .option("-y, --yes", "Skip all confirmation prompts")
   .action(
     async (
       branchArg: string | undefined,
-      options: { attach: boolean; rebuild: boolean; yes: boolean },
+      options: { attach: boolean; rebuild: boolean; from?: string; yes: boolean },
     ) => {
       if (!(await Config.findJanixRoot())) {
         console.error("Not in a janix project. Run 'janix init' first.");
@@ -65,7 +66,11 @@ export const createCommand = new Command("create")
       const branch = branchArg ?? (await Interactive.selectBranch());
 
       if (!Git.branchExists(projectRoot, branch)) {
-        const base = Init.getCurrentBranch(projectRoot);
+        const base = options.from ?? Git.getCurrentBranch(projectRoot);
+        if (options.from && !Git.branchExists(projectRoot, options.from)) {
+          console.error(`Base branch '${options.from}' does not exist.`);
+          process.exit(1);
+        }
         if (!options.yes) {
           const ok = await Interactive.confirm(
             `Branch '${branch}' doesn't exist. Create from '${base}'?`,
