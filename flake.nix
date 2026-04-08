@@ -38,7 +38,6 @@
 
             buildInputs = with pkgs; [
               nodejs
-              nodePackages_latest.npm
             ];
 
             shellHook = ''
