@@ -18,10 +18,11 @@ Each container mounts your Claude config, so Claude Code works inside environmen
 janix init               # Initialize janix in current repo
 janix create [branch]    # Create dev environment for a branch
 janix list               # List environments and their status
+janix ps                 # List running containers
 janix attach [branch]    # Attach to a running environment
 janix stop [branch]      # Stop a container (preserves clone)
 janix start [branch]     # Start a stopped container
-janix destroy [branch]   # Remove container and clone
+janix rm [branch]        # Remove container and clone
 ```
 
 ## Development

@@ -42,7 +42,6 @@ async function integrationsChanged(project: string, integrations: string[]): Pro
 }
 
 export const createCommand = new Command("create")
-  .alias("c")
   .description("Create a new dev environment for a branch")
   .argument("[branch]", "Branch name (interactive picker if not provided)")
   .option("--no-attach", "Don't attach to container after creation")

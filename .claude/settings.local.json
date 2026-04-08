@@ -13,7 +13,8 @@
       "WebFetch(domain:claudelog.com)",
       "Bash(npm run check:*)",
       "Bash(npm version:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(git mv:*)"
     ]
   },
   "outputStyle": "default"

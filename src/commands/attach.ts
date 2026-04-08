@@ -10,7 +10,6 @@ import { listClones } from "../lib/git.js";
 import { selectClone } from "../lib/interactive.js";
 
 export const attachCommand = new Command("attach")
-  .alias("at")
   .description("Attach to an existing dev environment")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {

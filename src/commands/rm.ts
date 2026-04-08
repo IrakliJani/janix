@@ -7,13 +7,11 @@ import * as Interactive from "../lib/interactive.js";
 import * as ProjectConfig from "../lib/project-config.js";
 import { buildJanixVars, resolveVars } from "../lib/vars.js";
 
-export const destroyCommand = new Command("destroy")
-  .alias("rm")
-  .description("Destroy a dev environment (removes clone and container)")
+export const rmCommand = new Command("rm")
+  .description("Remove a dev environment (removes clone and container)")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
-  .option("-f, --force", "Skip confirmation")
   .option("-y, --yes", "Skip confirmation")
-  .action(async (cloneArg: string | undefined, options: { force: boolean; yes: boolean }) => {
+  .action(async (cloneArg: string | undefined, options: { yes: boolean }) => {
     if (!(await Config.findJanixRoot())) {
       console.error("Not in a janix project. Run 'janix init' first.");
       process.exit(1);
@@ -47,8 +45,8 @@ export const destroyCommand = new Command("destroy")
       process.exit(1);
     }
 
-    if (!options.force && !options.yes) {
-      const confirmed = await Interactive.confirm(`Destroy ${cloneName} (clone and container)?`);
+    if (!options.yes) {
+      const confirmed = await Interactive.confirm(`Remove ${cloneName} (clone and container)?`);
       if (!confirmed) {
         console.log("Cancelled");
         return;
@@ -67,7 +65,7 @@ export const destroyCommand = new Command("destroy")
           projectRoot,
         );
       } catch {
-        console.warn("Teardown scripts failed, continuing with destroy...");
+        console.warn("Teardown scripts failed, continuing with removal...");
       }
     }
 

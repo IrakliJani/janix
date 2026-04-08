@@ -5,7 +5,6 @@ import { listClones } from "../lib/git.js";
 import { selectClone } from "../lib/interactive.js";
 
 export const startCommand = new Command("start")
-  .alias("up")
   .description("Start a stopped dev environment")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {
