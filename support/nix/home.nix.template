@@ -2,6 +2,8 @@
 let
   integrations = import ./integrations.nix;
   has = id: builtins.elem id integrations.ids;
+  llmAgents = builtins.getFlake "github:numtide/llm-agents.nix";
+  llmPackages = llmAgents.packages.${pkgs.system};
 in
 {
   home.username = "root";
@@ -9,6 +11,16 @@ in
   home.stateVersion = "24.11";
 
   programs.zsh.enable = true;
+
+  nix = {
+    package = pkgs.nix;
+    settings = {
+      extra-substituters = [ "https://cache.numtide.com" ];
+      extra-trusted-public-keys = [
+        "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+      ];
+    };
+  };
 
   programs.git = lib.mkIf (has "git") {
     enable = true;
@@ -28,7 +40,15 @@ in
     defaultEditor = true;
     vimAlias = true;
     viAlias = true;
+    withRuby = false;
+    withPython3 = false;
   };
+
+  home.packages =
+    [ pkgs.less ]
+    ++ (lib.optionals (has "claude") [ llmPackages."claude-code" ])
+    ++ (lib.optionals (has "pi") [ llmPackages.pi ])
+    ++ (lib.optionals (has "ghostty") [ pkgs.ghostty.terminfo ]);
 
   programs.home-manager.enable = true;
 }

@@ -9,11 +9,11 @@ export const pnpm: DetectableIntegration = {
   detect: async (projectRoot: string) => pathExists(join(projectRoot, "pnpm-lock.yaml")),
   dockerfileLines: [],
   volumes: [],
-  env: {},
-  initCommands: [
-    "mkdir -p /root/.cache/pnpm/store",
-    "pnpm config set store-dir /root/.cache/pnpm/store",
-  ],
+  env: {
+    // Keep pnpm store inside the shared cache volume (/root/.cache)
+    npm_config_store_dir: "/root/.cache/pnpm/store",
+  },
+  initCommands: [],
   credentials: [],
   nixConfig: {},
 };

@@ -1,4 +1,5 @@
 import { claude } from "./claude.js";
+import { ghostty } from "./ghostty.js";
 import { git } from "./git.js";
 import { pi } from "./pi.js";
 import { pnpm } from "./pnpm.js";
@@ -13,7 +14,7 @@ export type {
   Credential,
 } from "./types.js";
 
-export const ALL_INTEGRATIONS: Integration[] = [claude, git, pi, starship, vim, pnpm];
+export const ALL_INTEGRATIONS: Integration[] = [claude, git, pi, ghostty, starship, vim, pnpm];
 
 export function resolveIntegrations(ids: string[]): Integration[] {
   return ids.flatMap((id) => {

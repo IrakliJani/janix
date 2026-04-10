@@ -46,11 +46,7 @@ export const claude: SelectableIntegration = {
   label: "Claude Code",
   category: "agent",
   defaultSelected: true,
-  dockerfileLines: [
-    "RUN nix-env -iA nixpkgs.nodejs_22",
-    "RUN npm install -g @anthropic-ai/claude-code",
-    `RUN cat <<'ONBOARDING' > /root/.claude.json\n${ONBOARDING_JSON}\nONBOARDING`,
-  ],
+  dockerfileLines: [`RUN cat <<'ONBOARDING' > /root/.claude.json\n${ONBOARDING_JSON}\nONBOARDING`],
   volumes: [{ name: "janix-claude", path: "/root/.claude" }],
   env: {},
   initCommands: [],

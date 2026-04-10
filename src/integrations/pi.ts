@@ -19,10 +19,7 @@ export const pi: SelectableIntegration = {
   label: "Pi Coding Agent",
   category: "agent",
   defaultSelected: false,
-  dockerfileLines: [
-    "RUN nix-env -iA nixpkgs.nodejs_22",
-    "RUN npm install -g @mariozechner/pi-coding-agent",
-  ],
+  dockerfileLines: [],
   volumes: [{ name: "janix-pi", path: "/root/.pi" }],
   env: {},
   initCommands: [],
