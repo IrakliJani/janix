@@ -1,11 +1,11 @@
-import { claude } from "./claude.js";
-import { ghostty } from "./ghostty.js";
-import { git } from "./git.js";
-import { pi } from "./pi.js";
-import { pnpm } from "./pnpm.js";
-import { starship } from "./starship.js";
+import { claude } from "./claude/index.js";
+import { ghostty } from "./ghostty/index.js";
+import { git } from "./git/index.js";
+import { pi } from "./pi/index.js";
+import { pnpm } from "./pnpm/index.js";
+import { ohmyposh } from "./ohmyposh/index.js";
 import type { DetectableIntegration, Integration, SelectableIntegration } from "./types.js";
-import { vim } from "./vim.js";
+import { vim } from "./vim/index.js";
 
 export type {
   Integration,
@@ -14,7 +14,7 @@ export type {
   Credential,
 } from "./types.js";
 
-export const ALL_INTEGRATIONS: Integration[] = [claude, git, pi, ghostty, starship, vim, pnpm];
+export const ALL_INTEGRATIONS: Integration[] = [claude, git, pi, ghostty, ohmyposh, vim, pnpm];
 
 export function resolveIntegrations(ids: string[]): Integration[] {
   return ids.flatMap((id) => {

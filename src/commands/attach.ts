@@ -1,63 +1,24 @@
 import { Command } from "commander";
-import { containerName, findJanixRoot, getProjectName } from "../lib/config.js";
-import {
-  attachToContainer,
-  getContainer,
-  isContainerRunning,
-  startContainer,
-} from "../lib/docker.js";
-import { listClones } from "../lib/git.js";
-import { selectClone } from "../lib/interactive.js";
+import * as Docker from "../lib/docker.js";
+import { resolveClone } from "../lib/resolve-clone.js";
 
 export const attachCommand = new Command("attach")
   .description("Attach to an existing dev environment")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .action(async (cloneArg: string | undefined) => {
-    if (!(await findJanixRoot())) {
-      console.error("Not in a janix project. Run 'janix init' first.");
-      process.exit(1);
-    }
+    const { containerName, container } = await resolveClone(cloneArg);
 
-    const project = await getProjectName();
-    const clones = await listClones();
-
-    let cloneName: string;
-    if (cloneArg) {
-      const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
-      if (!match) {
-        console.error(`No clone found: '${cloneArg}'`);
-        console.error("Run 'janix list' to see available environments");
-        process.exit(1);
-      }
-      cloneName = match.name;
-    } else {
-      if (clones.length === 0) {
-        console.error("No clones found. Run 'janix create <branch>' first.");
-        process.exit(1);
-      }
-      cloneName = await selectClone(clones);
-    }
-
-    const clone = clones.find((c) => c.name === cloneName);
-    if (!clone) {
-      console.error(`Clone not found: ${cloneName}`);
-      process.exit(1);
-    }
-
-    const container = await getContainer(project, clone.branch);
     if (!container) {
-      console.error(`No container found for ${cloneName}`);
+      console.error(`No container found for ${containerName}`);
       console.error("The container may have been removed. Run 'janix create' to recreate it.");
       process.exit(1);
     }
 
-    const name = containerName(project, clone.branch);
-
-    if (!(await isContainerRunning(name))) {
+    if (!(await Docker.isContainerRunning(containerName))) {
       console.log("Starting stopped container...");
-      await startContainer(name);
+      await Docker.startContainer(containerName);
     }
 
-    console.log(`Attaching to ${name}...`);
-    attachToContainer(name);
+    console.log(`Attaching to ${containerName}...`);
+    Docker.attachToContainer(containerName);
   });

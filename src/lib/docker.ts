@@ -1,21 +1,24 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveIntegrations, type Integration } from "../integrations/index.js";
+import { resolveIntegrations } from "../integrations/index.js";
 import { config, containerName, getProjectImageName } from "./config.js";
 import { pathExists } from "./fs.js";
 import {
   generateIntegrationsNix,
-  getDockerfileTemplate,
-  getHomeNix,
+  getAllIntegrationModules,
+  getBaseModule,
+  getContainerFlake,
+  getContainerFlakeLock,
+  getDockerfile,
   getNixConfigs,
 } from "./nix.js";
 
 const FLAKE_HASH_LABEL = "janix.flake.hash";
 const DOCKERFILE_HASH_LABEL = "janix.dockerfile.hash";
-const HOME_NIX_HASH_LABEL = "janix.home-nix.hash";
+const JANIX_NIX_HASH_LABEL = "janix.nix.hash";
 const INTEGRATIONS_NIX_HASH_LABEL = "janix.integrations-nix.hash";
 const INTEGRATION_LABEL = "janix.integrations";
 const PROJECT_LABEL = "janix.project";
@@ -136,33 +139,37 @@ export async function getImageIntegrations(project: string): Promise<string | nu
   return getImageLabel(project, INTEGRATION_LABEL);
 }
 
-export async function generateDockerfile(integrations: Integration[]): Promise<string> {
-  const template = await getDockerfileTemplate();
-  const lines = integrations.flatMap((i) => i.dockerfileLines).join("\n");
-  return template.replace("{{INTEGRATION_LINES}}", lines || "");
-}
-
-export async function computeDockerfileHash(integrations: Integration[]): Promise<string> {
-  const dockerfile = await generateDockerfile(integrations);
-  return hashContent(dockerfile);
+export async function computeDockerfileHash(): Promise<string> {
+  return hashContent(await getDockerfile());
 }
 
 export async function getImageDockerfileHash(project: string): Promise<string | null> {
   return getImageLabel(project, DOCKERFILE_HASH_LABEL);
 }
 
-export async function dockerfileChanged(project: string, integrations: string[]): Promise<boolean> {
+export async function dockerfileChanged(project: string): Promise<boolean> {
   const imageHash = await getImageDockerfileHash(project);
   if (!imageHash) return true;
-  const resolved = resolveIntegrations(integrations);
-  const currentHash = await computeDockerfileHash(resolved);
+  const currentHash = await computeDockerfileHash();
   return imageHash !== currentHash;
 }
 
-export async function homeNixChanged(project: string): Promise<boolean> {
-  const imageHash = await getImageLabel(project, HOME_NIX_HASH_LABEL);
+export async function computeJanixNixHash(_integrations: string[]): Promise<string> {
+  const hash = createHash("sha256");
+  hash.update(await getContainerFlake());
+  hash.update(await getContainerFlakeLock());
+  hash.update(await getBaseModule());
+  const modules = await getAllIntegrationModules();
+  for (const mod of modules) {
+    hash.update(mod.content);
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+
+export async function janixNixChanged(project: string, integrations: string[]): Promise<boolean> {
+  const imageHash = await getImageLabel(project, JANIX_NIX_HASH_LABEL);
   if (!imageHash) return true;
-  const currentHash = hashContent(await getHomeNix());
+  const currentHash = await computeJanixNixHash(integrations);
   return imageHash !== currentHash;
 }
 
@@ -176,10 +183,6 @@ export async function integrationsNixChanged(
   const integrationsNix = generateIntegrationsNix(integrations, getNixConfigs(resolved));
   const currentHash = hashContent(integrationsNix);
   return imageHash !== currentHash;
-}
-
-export function getIntegrationInitCommands(ids: string[]): string[] {
-  return resolveIntegrations(ids).flatMap((i) => i.initCommands);
 }
 
 export function getIntegrationVolumes(ids: string[]): { name: string; path: string }[] {
@@ -250,25 +253,40 @@ export async function buildImage(
 ): Promise<void> {
   const imageName = getProjectImageName(project);
   const resolved = resolveIntegrations(integrations);
-  const dockerfile = await generateDockerfile(resolved);
-  const homeNix = await getHomeNix();
+  const dockerfile = await getDockerfile();
   const integrationsNix = generateIntegrationsNix(integrations, getNixConfigs(resolved));
   const buildContext = await mkdtemp(join(tmpdir(), "janix-build-"));
 
   try {
+    // Dockerfile
     await writeFile(join(buildContext, "Dockerfile"), dockerfile);
-    await writeFile(join(buildContext, "home.nix"), homeNix);
-    await writeFile(join(buildContext, "integrations.nix"), integrationsNix);
 
+    // User's project flake
     await copyFile(join(projectRoot, "flake.nix"), join(buildContext, "flake.nix"));
     const flakeLock = join(projectRoot, "flake.lock");
     if (await pathExists(flakeLock)) {
       await copyFile(flakeLock, join(buildContext, "flake.lock"));
     }
 
+    // Janix container nix config
+    const janixNixDir = join(buildContext, "janix-nix");
+    const modulesDir = join(janixNixDir, "modules");
+    await mkdir(modulesDir, { recursive: true });
+
+    await writeFile(join(janixNixDir, "flake.nix"), await getContainerFlake());
+    await writeFile(join(janixNixDir, "flake.lock"), await getContainerFlakeLock());
+    await writeFile(join(janixNixDir, "integrations.nix"), integrationsNix);
+    await writeFile(join(modulesDir, "base.nix"), await getBaseModule());
+
+    const modules = await getAllIntegrationModules();
+    for (const mod of modules) {
+      await writeFile(join(modulesDir, `${mod.id}.nix`), mod.content);
+    }
+
+    // Compute hashes for cache invalidation
     const flakeHash = await computeFlakeHash(projectRoot);
-    const dockerfileHash = await computeDockerfileHash(resolved);
-    const homeNixHash = hashContent(homeNix);
+    const dockerfileHash = hashContent(dockerfile);
+    const janixNixHash = await computeJanixNixHash(integrations);
     const integrationsNixHash = hashContent(integrationsNix);
 
     await runCommand(
@@ -282,7 +300,7 @@ export async function buildImage(
         "--label",
         `${DOCKERFILE_HASH_LABEL}=${dockerfileHash}`,
         "--label",
-        `${HOME_NIX_HASH_LABEL}=${homeNixHash}`,
+        `${JANIX_NIX_HASH_LABEL}=${janixNixHash}`,
         "--label",
         `${INTEGRATIONS_NIX_HASH_LABEL}=${integrationsNixHash}`,
         "--label",

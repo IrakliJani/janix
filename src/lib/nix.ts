@@ -1,22 +1,62 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ALL_INTEGRATIONS } from "../integrations/index.js";
 import type { Integration } from "../integrations/index.js";
+import { config } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SUPPORT_DIR = resolve(__dirname, "../../support");
 
-let _homeNix: string | undefined;
-let _dockerfileTemplate: string | undefined;
+let _dockerfile: string | undefined;
 
-export async function getHomeNix(): Promise<string> {
-  _homeNix ??= await readFile(join(SUPPORT_DIR, "nix/home.nix.template"), "utf-8");
-  return _homeNix;
+export async function getDockerfile(): Promise<string> {
+  _dockerfile ??= await readFile(join(SUPPORT_DIR, "docker/Dockerfile"), "utf-8");
+  return _dockerfile;
 }
 
-export async function getDockerfileTemplate(): Promise<string> {
-  _dockerfileTemplate ??= await readFile(join(SUPPORT_DIR, "docker/Dockerfile.template"), "utf-8");
-  return _dockerfileTemplate;
+export async function getContainerFlake(): Promise<string> {
+  return readFile(join(SUPPORT_DIR, "nix/flake.nix"), "utf-8");
+}
+
+export async function getContainerFlakeLock(): Promise<string> {
+  return readFile(join(SUPPORT_DIR, "nix/flake.lock"), "utf-8");
+}
+
+export async function getBaseModule(): Promise<string> {
+  return readFile(join(SUPPORT_DIR, "nix/modules/base.nix"), "utf-8");
+}
+
+export interface IntegrationModule {
+  id: string;
+  content: string;
+}
+
+async function readIntegrationModule(id: string): Promise<IntegrationModule | null> {
+  try {
+    const content = await readFile(join(SUPPORT_DIR, "nix/modules", `${id}.nix`), "utf-8");
+    return { id, content };
+  } catch {
+    // No module.nix for this integration (e.g., pnpm) — skip
+    return null;
+  }
+}
+
+export async function getIntegrationModules(ids: string[]): Promise<IntegrationModule[]> {
+  const modules: IntegrationModule[] = [];
+  for (const id of ids) {
+    const module = await readIntegrationModule(id);
+    if (module) {
+      modules.push(module);
+    }
+  }
+  return modules;
+}
+
+export async function getAllIntegrationModules(): Promise<IntegrationModule[]> {
+  return (
+    await Promise.all(ALL_INTEGRATIONS.map((integration) => readIntegrationModule(integration.id)))
+  ).filter((module): module is IntegrationModule => module !== null);
 }
 
 interface NixAttrSet {
@@ -63,11 +103,12 @@ export function generateIntegrationsNix(
 ): string {
   const integrations: Record<string, NixValue> = {
     ids,
+    workspace: config.containerWorkspace,
   };
 
-  for (const { id, config } of nixConfigs) {
-    if (Object.keys(config).length === 0) continue;
-    integrations[id] = config;
+  for (const { id, config: nixConfig } of nixConfigs) {
+    if (Object.keys(nixConfig).length === 0) continue;
+    integrations[id] = nixConfig;
   }
 
   return `${renderNixAttrSet(integrations)}\n`;

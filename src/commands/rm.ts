@@ -5,6 +5,7 @@ import * as Git from "../lib/git.js";
 import * as Init from "../lib/init.js";
 import * as Interactive from "../lib/interactive.js";
 import * as ProjectConfig from "../lib/project-config.js";
+import { resolveClone } from "../lib/resolve-clone.js";
 import { buildJanixVars, resolveVars } from "../lib/vars.js";
 
 export const rmCommand = new Command("rm")
@@ -12,38 +13,9 @@ export const rmCommand = new Command("rm")
   .argument("[clone]", "Clone name or branch (interactive if not provided)")
   .option("-y, --yes", "Skip confirmation")
   .action(async (cloneArg: string | undefined, options: { yes: boolean }) => {
-    if (!(await Config.findJanixRoot())) {
-      console.error("Not in a janix project. Run 'janix init' first.");
-      process.exit(1);
-    }
-
     await Docker.assertDockerRunning();
 
-    const project = await Config.getProjectName();
-    const clones = await Git.listClones();
-
-    let cloneName: string;
-    if (cloneArg) {
-      const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
-      if (!match) {
-        console.error(`No clone found: '${cloneArg}'`);
-        console.error("Run 'janix list' to see available environments");
-        process.exit(1);
-      }
-      cloneName = match.name;
-    } else {
-      if (clones.length === 0) {
-        console.error("No clones found.");
-        process.exit(1);
-      }
-      cloneName = await Interactive.selectClone(clones);
-    }
-
-    const clone = clones.find((c) => c.name === cloneName);
-    if (!clone) {
-      console.error(`Clone not found: ${cloneName}`);
-      process.exit(1);
-    }
+    const { project, cloneName, branch, containerName, container } = await resolveClone(cloneArg);
 
     if (!options.yes) {
       const confirmed = await Interactive.confirm(`Remove ${cloneName} (clone and container)?`);
@@ -55,9 +27,8 @@ export const rmCommand = new Command("rm")
 
     const projectConfig = await ProjectConfig.loadProjectConfig();
     const projectRoot = await Config.getProjectRoot();
-    const container = await Docker.getContainer(project, clone.branch);
     if (projectConfig.teardown.length > 0) {
-      const vars = buildJanixVars(project, clone.branch);
+      const vars = buildJanixVars(project, branch);
       console.log("Running teardown scripts...");
       try {
         Init.runScriptsOnHost(
@@ -70,14 +41,13 @@ export const rmCommand = new Command("rm")
     }
 
     if (container) {
-      const name = Config.containerName(project, clone.branch);
-      console.log(`Removing container ${name}...`);
-      await Docker.removeContainer(name);
+      console.log(`Removing container ${containerName}...`);
+      await Docker.removeContainer(containerName);
       console.log("Container removed");
     }
 
     console.log(`Removing clone ${cloneName}...`);
-    await Git.removeClone(clone.branch);
+    await Git.removeClone(branch);
     console.log("Clone removed");
 
     console.log("Done");

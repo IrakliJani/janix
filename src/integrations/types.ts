@@ -8,10 +8,8 @@ export interface Credential {
 interface BaseIntegration {
   id: string;
   label: string;
-  dockerfileLines: string[];
   volumes: { name: string; path: string }[];
   env: Record<string, string>;
-  initCommands: string[];
   credentials: Credential[];
   nixConfig: Record<string, string>;
 }

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import type { SelectableIntegration } from "./types.js";
+import type { SelectableIntegration } from "../types.js";
 
 function getGitConfig(key: string): string {
   try {
@@ -29,10 +29,8 @@ export const git: SelectableIntegration = {
   label: "Git",
   category: "shell-tool",
   defaultSelected: true,
-  dockerfileLines: [],
   volumes: [],
   env: {},
-  initCommands: [],
   credentials: [],
   get nixConfig() {
     return lazyNixConfig();

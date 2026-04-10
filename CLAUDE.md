@@ -1,3 +1,5 @@
+Shared repo guidance for agent behavior lives in [`README.md#agent-guidance`](./README.md#agent-guidance).
+
 After adding or modifying code, run:
 
 ```bash

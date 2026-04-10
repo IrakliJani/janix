@@ -112,8 +112,8 @@ export const createCommand = new Command("create")
         !(await Docker.imageExists(project)) ||
         options.rebuild ||
         (await integrationsChanged(project, integrations)) ||
-        (await Docker.dockerfileChanged(project, integrations)) ||
-        (await Docker.homeNixChanged(project)) ||
+        (await Docker.dockerfileChanged(project)) ||
+        (await Docker.janixNixChanged(project, integrations)) ||
         (await Docker.integrationsNixChanged(project, integrations)) ||
         (await promptFlakeRebuild(project, projectRoot, options.yes));
 
@@ -197,12 +197,6 @@ export const createCommand = new Command("create")
           if (configChanged) {
             await ProjectConfig.saveProjectConfig(projectConfig);
           }
-        }
-
-        const integrationInitCommands = Docker.getIntegrationInitCommands(integrations);
-        if (integrationInitCommands.length > 0) {
-          section("Setting up environment");
-          await Init.runScriptsInDevShell(integrationInitCommands, name);
         }
       } catch (error) {
         const teardownScripts = projectConfig.teardown.map((s) => resolveVars(s, vars));

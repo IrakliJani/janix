@@ -23,11 +23,6 @@ const DEFAULT_CONFIG: ProjectConfig = {
   consents: {},
 };
 
-interface LegacyConfig {
-  caches?: string[];
-  packageManager?: string;
-}
-
 export async function loadProjectConfig(): Promise<ProjectConfig> {
   const configPath = await getConfigPath();
 
@@ -37,15 +32,10 @@ export async function loadProjectConfig(): Promise<ProjectConfig> {
 
   try {
     const content = await readFile(configPath, "utf-8");
-    const parsed = JSON.parse(content) as Partial<ProjectConfig> & LegacyConfig;
-
-    let integrations = parsed.integrations;
-    if (!integrations && parsed.caches) {
-      integrations = [...parsed.caches, "claude", "starship"];
-    }
+    const parsed = JSON.parse(content) as Partial<ProjectConfig>;
 
     return {
-      integrations: integrations ?? DEFAULT_CONFIG.integrations,
+      integrations: parsed.integrations ?? DEFAULT_CONFIG.integrations,
       envFiles: parsed.envFiles ?? DEFAULT_CONFIG.envFiles,
       envOverrides: parsed.envOverrides ?? DEFAULT_CONFIG.envOverrides,
       network: parsed.network ?? DEFAULT_CONFIG.network,

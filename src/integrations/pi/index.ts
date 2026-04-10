@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { pathExists } from "../lib/fs.js";
-import type { SelectableIntegration } from "./types.js";
+import { pathExists } from "../../lib/fs.js";
+import type { SelectableIntegration } from "../types.js";
 
 async function resolveCredentials(): Promise<string | null> {
   const credPath = join(homedir(), ".pi", "agent", "auth.json");
@@ -19,10 +19,8 @@ export const pi: SelectableIntegration = {
   label: "Pi Coding Agent",
   category: "agent",
   defaultSelected: false,
-  dockerfileLines: [],
   volumes: [{ name: "janix-pi", path: "/root/.pi" }],
   env: {},
-  initCommands: [],
   credentials: [
     {
       label: "Pi agent credentials",

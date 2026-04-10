@@ -30,3 +30,12 @@ janix rm [branch]        # Remove container and clone
 ```bash
 npm run check && npm run build
 ```
+
+## Agent guidance
+
+`AGENTS.md` and `CLAUDE.md` currently defer to this section for shared working policy.
+
+- Before `1.0`, we do not optimize for backward compatibility.
+- Prefer clean breaking changes over compatibility layers, shims, aliases, dual code paths, or legacy fallbacks.
+- Do not build legacy behavior or migration scaffolding unless explicitly requested.
+- When changing APIs or behavior, implement the simplest forward-looking version.
