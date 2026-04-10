@@ -24,7 +24,9 @@ export const rmCommand = new Command("rm")
 
     let cloneName: string;
     if (cloneArg) {
-      const match = clones.find((c) => c.name === cloneArg || c.branch === cloneArg);
+      const match = clones.find(
+        (c) => c.name === cloneArg || c.branch === cloneArg || c.currentBranch === cloneArg,
+      );
       if (!match) {
         console.error(`No clone found: '${cloneArg}'`);
         console.error("Run 'janix list' to see available environments");
@@ -77,7 +79,7 @@ export const rmCommand = new Command("rm")
     }
 
     console.log(`Removing clone ${cloneName}...`);
-    await Git.removeClone(clone.branch);
+    await Git.removeClone(clone.name);
     console.log("Clone removed");
 
     console.log("Done");

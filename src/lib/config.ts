@@ -64,8 +64,12 @@ export async function getConfigPath(): Promise<string> {
   return join(await getJanixDir(), CONFIG_FILE);
 }
 
+export function sanitizeBranchForClone(branch: string): string {
+  return branch.replace(/\//g, "-");
+}
+
 export async function getClonePath(branch: string): Promise<string> {
-  const sanitized = branch.replace(/\//g, "-");
+  const sanitized = sanitizeBranchForClone(branch);
   return join(await getClonesDir(), sanitized);
 }
 

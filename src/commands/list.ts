@@ -31,6 +31,9 @@ export const listCommand = new Command("list")
 
       console.log(`  ${clone.name}`);
       console.log(`    Branch:    ${clone.branch}`);
+      if (clone.currentBranch !== clone.branch) {
+        console.log(`    Checked:   ${clone.currentBranch}`);
+      }
       console.log(`    Status:    ${formatState(container)}`);
       if (container) {
         console.log(`    Container: ${container.id.slice(0, 12)}`);

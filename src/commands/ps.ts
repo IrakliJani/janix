@@ -31,6 +31,9 @@ export const psCommand = new Command("ps")
 
       console.log(`  ${clone.name}`);
       console.log(`    Branch:    ${clone.branch}`);
+      if (clone.currentBranch !== clone.branch) {
+        console.log(`    Checked:   ${clone.currentBranch}`);
+      }
       console.log(`    Status:    ${formatState(container)}`);
       console.log(`    Container: ${container.id.slice(0, 12)}`);
       console.log(`    Docker:    ${container.status}`);

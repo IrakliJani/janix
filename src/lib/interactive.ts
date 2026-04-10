@@ -2,7 +2,7 @@ import { confirm as inquirerConfirm, input } from "@inquirer/prompts";
 import search from "@inquirer/search";
 import { listContainers, listNetworks, type ContainerInfo } from "./docker.js";
 import { getProjectRoot } from "./config.js";
-import { fetchAllAsync, listBranches } from "./git.js";
+import { fetchAllAsync, listBranches, type CloneInfo } from "./git.js";
 
 export async function selectBranch(): Promise<string> {
   const projectRoot = await getProjectRoot();
@@ -73,9 +73,7 @@ export async function selectContainer(): Promise<ContainerInfo> {
   return container;
 }
 
-export async function selectClone(
-  clones: Array<{ name: string; branch: string }>,
-): Promise<string> {
+export async function selectClone(clones: CloneInfo[]): Promise<string> {
   if (clones.length === 0) {
     console.error("No clones found");
     process.exit(1);
@@ -89,13 +87,17 @@ export async function selectClone(
         .filter(
           (c) =>
             c.name.toLowerCase().includes(searchTerm) ||
-            c.branch.toLowerCase().includes(searchTerm),
+            c.branch.toLowerCase().includes(searchTerm) ||
+            c.currentBranch.toLowerCase().includes(searchTerm),
         )
         .slice(0, 20)
         .map((c) => ({
           value: c.name,
           name: c.name,
-          description: `branch: ${c.branch}`,
+          description:
+            c.currentBranch === c.branch
+              ? `branch: ${c.branch}`
+              : `branch: ${c.branch} (checked out: ${c.currentBranch})`,
         }));
     },
   });
