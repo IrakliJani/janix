@@ -31,6 +31,22 @@ janix rm [branch]        # Remove container and clone
 npm run check && npm run build
 ```
 
+## Release
+
+Before `1.0`, janix does not follow strict SemVer.
+
+- Fixes bump `patch`
+- Features bump `minor`
+- Breaking changes also bump `minor`
+- We will switch to normal SemVer rules when `1.0` is released
+
+Use `npm version` to update `package.json`, create the release commit, and create the git tag:
+
+```bash
+npm version patch
+npm version minor
+```
+
 ## Agent guidance
 
 `AGENTS.md` and `CLAUDE.md` currently defer to this section for shared working policy.
