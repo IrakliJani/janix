@@ -140,13 +140,13 @@ export const createCommand = new Command("create")
         console.log(`  Network:     ${projectConfig.network}`);
       }
 
-      const initScripts = projectConfig.init.map((s) => resolveVars(s, vars));
-      if (initScripts.length > 0) {
-        section("Running init scripts");
-        Init.runScriptsOnHost(initScripts, projectRoot);
-      }
-
       try {
+        const initScripts = projectConfig.init.map((s) => resolveVars(s, vars));
+        if (initScripts.length > 0) {
+          section("Running init scripts");
+          Init.runScriptsOnHost(initScripts, projectRoot);
+        }
+
         if (integrations.length > 0) {
           section("Integrations");
 

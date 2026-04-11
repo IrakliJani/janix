@@ -1,11 +1,10 @@
-import { sanitizeBranchForId, sanitizeBranchSafe } from "./config.js";
+import { encodeBranchForResource } from "./config.js";
 
 export function buildJanixVars(project: string, branch: string): Record<string, string> {
   return {
     JANIX_BRANCH: branch,
     JANIX_PROJECT: project,
-    JANIX_BRANCH_SLUG: sanitizeBranchForId(branch),
-    JANIX_BRANCH_SAFE: sanitizeBranchSafe(branch),
+    JANIX_BRANCH_SAFE: encodeBranchForResource(branch),
   };
 }
 

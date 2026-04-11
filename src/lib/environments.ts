@@ -1,4 +1,4 @@
-import { config, getProjectName, sanitizeBranchForContainer } from "./config.js";
+import { config, decodeBranchFromResource, getProjectName } from "./config.js";
 import { listContainers, type ContainerInfo } from "./docker.js";
 import { listClones } from "./git.js";
 
@@ -21,7 +21,8 @@ export function formatState(container: ContainerInfo | undefined): string {
 export function containerBranchKey(projectPrefix: string, container: ContainerInfo): string {
   if (container.branch) return container.branch;
   if (container.name.startsWith(projectPrefix)) {
-    return container.name.slice(projectPrefix.length);
+    const key = container.name.slice(projectPrefix.length);
+    return decodeBranchFromResource(key);
   }
   return "";
 }
@@ -37,11 +38,8 @@ export async function getEnvironments() {
   const containerMap = new Map<string, ContainerInfo>();
   for (const container of containers) {
     const branchKey = containerBranchKey(projectPrefix, container);
-    const keys = [branchKey, sanitizeBranchForContainer(branchKey)];
-    for (const key of keys) {
-      if (key) {
-        containerMap.set(key, container);
-      }
+    if (branchKey) {
+      containerMap.set(branchKey, container);
     }
   }
 

@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { findJanixRoot, sanitizeBranchForContainer } from "../lib/config.js";
+import { findJanixRoot } from "../lib/config.js";
 import { containerBranchKey, formatState, getEnvironments } from "../lib/environments.js";
 
 export const psCommand = new Command("ps")
@@ -24,13 +24,15 @@ export const psCommand = new Command("ps")
     const matchedContainers = new Set<string>();
 
     for (const clone of clones) {
-      const sanitizedBranch = sanitizeBranchForContainer(clone.branch);
-      const container = containerMap.get(clone.branch) ?? containerMap.get(sanitizedBranch);
+      const container = containerMap.get(clone.branch);
       if (!container || container.state.toLowerCase() !== "running") continue;
       matchedContainers.add(container.name);
 
       console.log(`  ${clone.name}`);
       console.log(`    Branch:    ${clone.branch}`);
+      if (clone.currentBranch !== clone.branch) {
+        console.log(`    Checked:   ${clone.currentBranch}`);
+      }
       console.log(`    Status:    ${formatState(container)}`);
       console.log(`    Container: ${container.id.slice(0, 12)}`);
       console.log(`    Docker:    ${container.status}`);

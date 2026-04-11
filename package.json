@@ -15,6 +15,7 @@
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "janix": "node dist/cli.js",
+    "test": "npm run build && node --test test/**/*.test.mjs",
     "format": "oxfmt --write src",
     "format:check": "oxfmt --check src",
     "lint": "oxlint",

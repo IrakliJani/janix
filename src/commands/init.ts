@@ -2,7 +2,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { checkbox } from "@inquirer/prompts";
 import { Command } from "commander";
-import { JANIX_DIR, CLONES_DIR, sanitizeBranchForId, sanitizeBranchSafe } from "../lib/config.js";
+import { JANIX_DIR, CLONES_DIR, encodeBranchForResource } from "../lib/config.js";
 import { loadEnvFiles } from "../lib/env.js";
 import { pathExists } from "../lib/fs.js";
 import { getCurrentBranch, isGitRepo } from "../lib/git.js";
@@ -38,8 +38,7 @@ export const initCommand = new Command("init")
     const varHint = [
       `  \u2713 $JANIX_PROJECT=${projectName}`,
       `  \u2713 $JANIX_BRANCH=${currentBranch}`,
-      `  \u2713 $JANIX_BRANCH_SLUG=${sanitizeBranchForId(currentBranch)}`,
-      `  \u2713 $JANIX_BRANCH_SAFE=${sanitizeBranchSafe(currentBranch)}`,
+      `  \u2713 $JANIX_BRANCH_SAFE=${encodeBranchForResource(currentBranch)}`,
     ].join("\n");
     const janixDir = join(cwd, JANIX_DIR);
 

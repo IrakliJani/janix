@@ -1,5 +1,4 @@
 import { basename, dirname, join, resolve } from "node:path";
-import slugify from "@sindresorhus/slugify";
 import { pathExists } from "./fs.js";
 
 export const JANIX_DIR = ".janix";
@@ -64,24 +63,79 @@ export async function getConfigPath(): Promise<string> {
   return join(await getJanixDir(), CONFIG_FILE);
 }
 
+function isLowerAlphaNumByte(byte: number): boolean {
+  return (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39);
+}
+
+export function encodeBranchForResource(branch: string): string {
+  if (branch.length === 0) {
+    throw new Error("Branch name cannot be empty");
+  }
+
+  return Array.from(Buffer.from(branch, "utf8"), (byte) => {
+    if (isLowerAlphaNumByte(byte)) {
+      return String.fromCharCode(byte);
+    }
+
+    if (byte === 0x2d) {
+      return "--";
+    }
+
+    return `-${byte.toString(16).padStart(2, "0")}`;
+  }).join("");
+}
+
+function isHexPair(value: string): boolean {
+  return /^[0-9a-f]{2}$/.test(value);
+}
+
+export function decodeBranchFromResource(key: string): string {
+  if (key.length === 0) {
+    throw new Error("Invalid resource branch key: ");
+  }
+
+  const bytes: number[] = [];
+
+  for (let i = 0; i < key.length; ) {
+    const ch = key.charAt(i);
+    if (ch !== "-") {
+      bytes.push(ch.charCodeAt(0));
+      i += 1;
+      continue;
+    }
+
+    const next = key[i + 1];
+    if (next === "-") {
+      bytes.push(0x2d);
+      i += 2;
+      continue;
+    }
+
+    const hex = key.slice(i + 1, i + 3);
+    if (!isHexPair(hex)) {
+      throw new Error(`Invalid resource branch key: ${key}`);
+    }
+
+    bytes.push(Number.parseInt(hex, 16));
+    i += 3;
+  }
+
+  const branch = Buffer.from(bytes).toString("utf8");
+  if (encodeBranchForResource(branch) !== key) {
+    throw new Error(`Invalid resource branch key: ${key}`);
+  }
+
+  return branch;
+}
+
 export async function getClonePath(branch: string): Promise<string> {
-  const sanitized = branch.replace(/\//g, "-");
-  return join(await getClonesDir(), sanitized);
+  return join(await getClonesDir(), encodeBranchForResource(branch));
 }
 
 export function sanitizeBranchForContainer(branch: string): string {
   return branch.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-");
 }
 
-export function sanitizeBranchForId(branch: string): string {
-  return slugify(branch, { separator: "-" });
-}
-
-export function sanitizeBranchSafe(branch: string): string {
-  return slugify(branch, { separator: "_" });
-}
-
 export function containerName(project: string, branch: string): string {
-  const sanitizedBranch = sanitizeBranchForContainer(branch);
-  return `${config.containerPrefix}-${project}-${sanitizedBranch}`;
+  return `${config.containerPrefix}-${project}-${encodeBranchForResource(branch)}`;
 }

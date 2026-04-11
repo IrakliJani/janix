@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { getClonePath, getClonesDir, getProjectRoot } from "./config.js";
+import { join } from "node:path";
+import { decodeBranchFromResource, getClonePath, getClonesDir, getProjectRoot } from "./config.js";
 import { pathExists } from "./fs.js";
 
 function runGit(args: string[], cwd: string): string {
@@ -43,6 +44,13 @@ export interface BranchInfo {
   author: string;
 }
 
+export interface CloneInfo {
+  name: string;
+  path: string;
+  branch: string;
+  currentBranch: string;
+}
+
 export function listBranches(repoPath: string): BranchInfo[] {
   const output = runGit(
     [
@@ -81,19 +89,20 @@ export function listLocalBranches(repoPath: string): string[] {
   return output.split("\n").filter((b) => b);
 }
 
-export async function listClones(): Promise<Array<{ name: string; path: string; branch: string }>> {
+export async function listClones(): Promise<CloneInfo[]> {
   const clonesDir = await getClonesDir();
   if (!(await pathExists(clonesDir))) return [];
 
-  const clones: Array<{ name: string; path: string; branch: string }> = [];
+  const clones: CloneInfo[] = [];
   const entries = await readdir(clonesDir, { withFileTypes: true });
 
   for (const dir of entries) {
     if (!dir.isDirectory()) continue;
-    const clonePath = `${clonesDir}/${dir.name}`;
+    const clonePath = join(clonesDir, dir.name);
     try {
-      const branch = runGit(["rev-parse", "--abbrev-ref", "HEAD"], clonePath);
-      clones.push({ name: dir.name, path: clonePath, branch });
+      const currentBranch = runGit(["rev-parse", "--abbrev-ref", "HEAD"], clonePath);
+      const branch = decodeBranchFromResource(dir.name);
+      clones.push({ name: dir.name, path: clonePath, branch, currentBranch });
     } catch {
       // Not a git repo, skip
     }

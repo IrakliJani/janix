@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveIntegrations } from "../integrations/index.js";
-import { config, containerName, getProjectImageName } from "./config.js";
+import { config, containerName, encodeBranchForResource, getProjectImageName } from "./config.js";
 import { pathExists } from "./fs.js";
 import {
   generateIntegrationsNix,
@@ -23,6 +23,7 @@ const INTEGRATIONS_NIX_HASH_LABEL = "janix.integrations-nix.hash";
 const INTEGRATION_LABEL = "janix.integrations";
 const PROJECT_LABEL = "janix.project";
 const BRANCH_LABEL = "janix.branch";
+const BRANCH_SAFE_LABEL = "janix.branch-safe";
 
 const CACHE_VOLUME = "janix-cache";
 const CACHE_PATH = "/root/.cache";
@@ -352,6 +353,8 @@ export async function createContainer(options: CreateContainerOptions): Promise<
     `${PROJECT_LABEL}=${project}`,
     "--label",
     `${BRANCH_LABEL}=${branch}`,
+    "--label",
+    `${BRANCH_SAFE_LABEL}=${encodeBranchForResource(branch)}`,
     "-v",
     `${clonePath}:${config.containerWorkspace}`,
     "-v",
